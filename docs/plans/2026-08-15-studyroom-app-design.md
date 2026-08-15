@@ -25,6 +25,7 @@ Beyond Q&A, the app is a **digest engine**: its job is to make Gregory *really* 
 - **The folder is the source of truth.** Adding a subject = `mkdir`. Adding materials = dropping files in. The app never requires registration steps and never modifies source materials.
 - **Claude CLI, not the API.** The app shells out to `claude` (Claude Code, installed and logged in). This rides the existing Claude subscription — never introduce `ANTHROPIC_API_KEY` handling or Anthropic SDK calls.
 - **Artifacts accumulate as plain files.** Everything Claude produces (summaries, quizzes, flashcards) is written into `<subject>/_generated/` as markdown, so it's portable, greppable, and becomes study material itself.
+- **bot-hq is a flag reference, not an architecture.** This doc borrowed its *verified CLI invocations and stream-json parsing* — nothing else. No retry supervisors, no watchdogs, no PID reapers, no event buses, no queues. If a mechanism smells like orchestration, it doesn't belong here; the error path is "show the error, let Gregory press the button again."
 
 ## 2. Environment (verified 2026-08-15)
 
@@ -191,11 +192,11 @@ The CLI owns conversation state. **Per chat**: capture `session_id` from the `in
 
 ### 6.4 Errors, retry, cancel
 
-- **Failure:** `result.is_error || result.api_error_status != null`. Transient HTTP statuses worth ONE automatic retry (2s delay): `408 425 429 500 502 503 504 529`. A retry is a fresh spawn with identical argv — but re-read the stored session id first, since an `init` event may have landed before the failure. If the retry also fails, treat it as permanent. Everything else (400/401/403/404/413/422) is permanent immediately — surface it in the chat as an error bubble.
+- **Failure:** `result.is_error || result.api_error_status != null`. Show it as an error bubble and stop. **No automatic retries** — retry policies are bot-hq supervision machinery this app doesn't need; Gregory just presses send again (the session id is already saved if `init` arrived, so nothing is lost).
 - **Cancel:** `process.kill(-child.pid, "SIGKILL")` — negative pid kills the whole process group (this is why `detached: true`). Then release the busy flag. Context already accumulated is safe: the next message just `--resume`s. Also cancel when the browser aborts the streaming request (`req.on("close", …)`).
 - **No wall-clock timeout on turns** — Claude legitimately spends minutes on "summarize chapter 7". The Cancel button is the timeout. (One-shot utility spawns, if any are added, should get hard 60s timeouts.)
 - **Exit without `result` event** (crash): treat as error, release the busy flag, keep whatever text already streamed.
-- **Server shutdown reaps children:** because children are `detached`, they survive a server crash/exit unless killed. Keep an in-memory set of live child PIDs (claude turns AND transcription jobs); on `SIGINT`/`SIGTERM`/`exit`, kill every registered process group before exiting — the Node equivalent of bot-hq's reaper.
+- **No shutdown reaper.** Every child runs in `-p` mode and terminates itself at the end of its single turn — if the server dies mid-turn, the worst case is one claude process quietly finishing and exiting on its own. `detached: true` exists for exactly one reason: so the Cancel button can kill the whole process group. Don't build PID registries or signal handlers.
 
 ### 6.5 Sibling pipeline: video transcription (local Whisper — Claude is not involved)
 
