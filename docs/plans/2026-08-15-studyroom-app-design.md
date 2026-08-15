@@ -52,7 +52,7 @@ Verify PDF reading works before building the chat: run `claude -p "Read the firs
 
 1. **Dashboard** — subjects auto-discovered from `$STUDYROOM_DIR`. A subject is any top-level directory whose name does not start with `.` or `_` and is not `docs` or `app`. Show per-subject file count and whether `_generated/` has content.
 2. **Subject page** — **split view**: left pane holds the file list and the preview, right pane holds the chat, both always visible (read the material and talk about it simultaneously). Preview per type: PDFs via `<embed src>` (browser-native viewer), videos via `<video controls>` (Express static serves HTTP Range requests natively, so seeking works with zero extra code), markdown rendered (vendor `marked.min.js` locally, no CDN), text/code as `<pre>`, and `_generated/*.html` visual explainers in a **sandboxed iframe** (`<iframe sandbox src=…>` — CSS and inline SVG render, scripts are blocked; §7.1 forbids Claude from using JS in explainers anyway).
-3. **Chat per subject** — a conversation with Claude grounded in that subject's folder. Streams responses, shows tool activity ("Reading mml-book.pdf…"), survives server restarts (history + session resume are persisted).
+3. **Chats per subject (ChatGPT-style list)** — each subject holds a **list of chats**, each an independent Claude conversation with its own memory. Two kinds, both grounded in the subject folder: **general** (covers all materials) and **focused** (dedicated to one material — created from a file's "New focused chat" action; mechanically it's the same spawn with an extra system-prompt line steering it to that file, so it can still pull context from siblings). A slim chat switcher sits at the top of the chat pane: chat titles (default = first message truncated to ~40 chars, renameable inline), newest-active first, plus New chat. Every chat streams responses, shows tool activity ("Reading mml-book.pdf…"), and survives server restarts (history + per-chat session resume are persisted).
 4. **Study actions** — buttons that send canned prompts (§7.2) into the same chat, every one of them tuned by the learner profile (§7.0): **Digest** (the flagship — one button turns a file/topic into a complete study kit: notes + visual explainer + worked examples + flashcards + quiz), *Summarize*, *Quiz me*, *Make flashcards*, *Explain a concept*, *Visual explainer* (a self-contained HTML page with inline SVG diagrams — for visual learning), *Research* (web-grounded, beyond the course materials, saved with source URLs). Outputs saved by Claude into `_generated/`.
 5. **Transcribe** — a button on each video file. Claude cannot watch or hear video (model limitation, all current models), so the app runs **local Whisper** (§6.5) to produce a timestamped transcript in `_generated/transcripts/`; from then on the lecture is ordinary text material the chat reads, quotes, and quizzes from. Videos without a transcript show a "not transcribed yet" badge.
 6. **Cancel button** — kills the running turn.
@@ -103,8 +103,8 @@ Plus **`./start`** at the **repo root** (not inside `app/`): a small bash script
 - `<root>/<Subject>/_generated/transcripts/<video-basename>.md` — app-produced (not Claude-produced) lecture transcripts, §6.5. Text, small, and **committed to git** — the durable, searchable form of the un-pushable videos.
 - `<root>/<Subject>/_generated/digest-<topic>-<date>/` — a Digest action's study kit: `notes.md`, `visual.html`, `worked-examples.md`, `flashcards.md`, `quiz.md`.
 - `<root>/profile.md` — the learner profile (§7.0). A top-level *file*, so subject discovery (directories only) is unaffected. Committed.
-- `<root>/.studyroom/state.json` — `{ "subjects": { "AI211": { "claudeSessionId": "<uuid>" } } }`. Keep state in memory as the source of truth and persist with an atomic write (temp file + rename); never re-read the file mid-run. Node's single thread plus per-subject keys make parallel turns across subjects safe. Server boot creates `.studyroom/` and `.studyroom/chats/` if missing.
-- `<root>/.studyroom/chats/<Subject>.jsonl` — one JSON object per line: `{ "ts": <ms>, "kind": "user"|"assistant"|"tool_use"|"error", "text"?, "tool"? }`. UI renders history from this file; "New chat" archives it to `<Subject>-<timestamp>.jsonl` and clears the session id.
+- `<root>/.studyroom/state.json` — per-chat records, nested by subject: `{ "subjects": { "AI211": { "chats": [ { "id": "<uuid>", "title": "...", "claudeSessionId": "<uuid>|null", "focus": "<relative file path>|null", "createdAt": <ms>, "updatedAt": <ms> } ] } } }`. Chat `id` = `crypto.randomUUID()`. Keep state in memory as the source of truth and persist with an atomic write (temp file + rename); never re-read the file mid-run. Server boot creates `.studyroom/` and `.studyroom/chats/` if missing.
+- `<root>/.studyroom/chats/<Subject>/<chatId>.jsonl` — one JSON object per line: `{ "ts": <ms>, "kind": "user"|"assistant"|"tool_use"|"error", "text"?, "tool"? }`. UI renders history from this file. Deleting a chat moves its JSONL to `chats/<Subject>/archive/` and removes its state entry.
 - **Git:** `~/Studyroom` is a git repo (remote above, private); PDFs and docs are committed. `.gitignore` covers `.DS_Store`, `.studyroom/` (machine state + private chat logs), and **video files** — lecture videos exceed GitHub's 100 MB hard per-file limit and stay local-only (Git LFS is the escape hatch if remote backup is ever needed, but its free tier won't survive a semester of lectures). The app never runs git, and Claude can't either (Bash is denied, §6.1).
 
 ## 6. Claude CLI integration — the core of the app
@@ -143,7 +143,7 @@ Rules that came from bot-hq's scar tissue:
 - **Always pin `cwd`, never inherit.** An unpinned cwd makes Claude adopt whatever repo/CLAUDE.md it lands in.
 - **Permission posture:** `--dangerously-skip-permissions` disables deny rules entirely, so it can never enforce a tool boundary. `dontAsk` + allowlist + denylist is the only mechanical option, and it fails closed. Studyroom needs Write/Edit (for `_generated/`) but has no reason to grant Bash — so don't.
 - The system prompt goes via `--append-system-prompt-file <path>` (write it to `<root>/.studyroom/<subject>-system-prompt.txt` — the same `.studyroom/` dir as §5, under the data root, not the app repo — before each spawn). The file form avoids argv-length issues and is what bot-hq uses; the inline `--append-system-prompt` also exists if ever preferred.
-- One turn at a time per subject (in-memory busy flag per subject; return 409 if busy). Turns in *different* subjects may run in parallel — the M4/24GB machine handles several fine.
+- One turn at a time **per chat** (in-memory busy flag per chat id; return 409 if that chat is busy). Different chats — same subject or not — may run turns in parallel; they're independent Claude sessions, and the M4/24GB machine handles several fine. (If parallel `_generated/` writes ever collide in practice, serialize per subject then — not before.)
 
 ### 6.2 Parsing stdout (newline-delimited stream-json)
 
@@ -187,7 +187,7 @@ Event cheat-sheet (one process = one turn; events arrive in this rough order):
 
 ### 6.3 Conversation continuity
 
-The CLI owns conversation state. Per subject: capture `session_id` from the `init` event → store in `state.json` → pass `--resume <uuid>` on the next spawn. Overwrite the stored id on every init (idempotent — a resumed session reports the same id family). "New chat" = clear the stored id. This survives app restarts and reboots; transcripts live under `~/.claude/projects/`.
+The CLI owns conversation state. **Per chat**: capture `session_id` from the `init` event → store on that chat's record in `state.json` → pass `--resume <uuid>` on that chat's next spawn. Overwrite the stored id on every init (idempotent — a resumed session reports the same id family). A brand-new chat simply has `claudeSessionId: null` and spawns without `--resume`. This survives app restarts and reboots; transcripts live under `~/.claude/projects/`.
 
 ### 6.4 Errors, retry, cancel
 
@@ -245,7 +245,7 @@ Rules:
   precision matters.
 ```
 
-After these rules the server appends `## How Gregory learns best` + the contents of `<root>/profile.md` (§7.0).
+After these rules the server appends `## How Gregory learns best` + the contents of `<root>/profile.md` (§7.0). For a **focused chat** (§3.3) it also appends: `This chat is dedicated to "<focus file>". Ground your answers primarily in that file; treat the other materials as supporting context.`
 
 `<SUBJECT_NAME>` is the folder name; if a syllabus PDF exists, mention it: "The file <name> is the course syllabus."
 
@@ -259,7 +259,7 @@ After these rules the server appends `## How Gregory learns best` + the contents
 - **Visual explainer:** `Create a self-contained visual explainer for <topic> at _generated/visual-<topic>-<date>.html. Inline CSS + inline SVG only, no JavaScript. Show the structure spatially: concept maps, flow diagrams, labeled figures. Text only where a diagram can't carry it.`
 - **Research:** `Research <question> using web search. Cross-reference what you find with the course materials where relevant, and note agreements or differences. Save a note to _generated/research-<topic>-<date>.md with a "## Sources" section listing every URL used. Give me the key findings inline.`
 
-**Targeting (how `<file>`/`<topic>` get filled):** clicking a file in the left pane selects it as the action context — file-scoped actions (Summarize, file-level Digest, Flashcards on a file) use the selected file. Topic-scoped actions (Explain, Research, topic-level Digest) show a single-line text input inline. No modals, no multi-step wizards.
+**Targeting (how `<file>`/`<topic>` get filled):** clicking a file in the left pane selects it as the action context — file-scoped actions (Summarize, file-level Digest, Flashcards on a file) use the selected file. Topic-scoped actions (Explain, Research, topic-level Digest) show a single-line text input inline. No modals, no multi-step wizards. Actions always send into the **currently active chat**; in a focused chat, the focus file is the default action context.
 
 The quiz flow deliberately stays inside the chat (Claude grades follow-up answers via `--resume` context) — no dedicated quiz engine in v1.
 
@@ -268,12 +268,15 @@ The quiz flow deliberately stays inside the chat (Claude grades follow-up answer
 | Route | Method | Behavior |
 |---|---|---|
 | `/api/subjects` | GET | discovered subjects with file counts |
-| `/api/subjects/:s/files` | GET | `{ materials: [...], generated: [...] }` (name, size, mtime) |
+| `/api/subjects/:s/files` | GET | `{ materials: [...], generated: [...] }` (relative path, size, mtime) — **recursive** within the subject, so materials can be organized into subfolders (e.g. `AI201/videos/`); UI groups by subfolder |
 | `/files/:s/*` | GET | raw file serve for previews (path-traversal-safe: resolve + verify inside subject dir) |
-| `/api/subjects/:s/chat` | GET | chat history (parsed JSONL) |
-| `/api/subjects/:s/chat` | POST | body `{ message }`; responds with plain **NDJSON** (`Content-Type: application/x-ndjson`): one JSON object per line, `{kind:"text"|"tool_use"|"done"|"error", ...}`. This is NOT SSE — no `data:` prefixes, no blank-line framing; the client splits on `\n`. Browser reads it via `fetch` + `ReadableStream` (POST can't use EventSource). Client abort = cancel. 409 if subject busy. |
-| `/api/subjects/:s/chat/reset` | POST | archive JSONL, clear session id; 409 if subject busy (same flag as chat) |
-| `/api/subjects/:s/cancel` | POST | kill the running turn's process group |
+| `/api/subjects/:s/chats` | GET | list the subject's chats (id, title, focus, updatedAt), newest-updated first |
+| `/api/subjects/:s/chats` | POST | body `{ focus? }` (relative file path or omitted for general); creates a chat, returns its record |
+| `/api/subjects/:s/chats/:id` | GET | that chat's history (parsed JSONL) |
+| `/api/subjects/:s/chats/:id` | PATCH | body `{ title }` — rename |
+| `/api/subjects/:s/chats/:id` | DELETE | archive the JSONL (per §5) and remove the chat; 409 if that chat is busy |
+| `/api/subjects/:s/chats/:id/messages` | POST | body `{ message }`; responds with plain **NDJSON** (`Content-Type: application/x-ndjson`): one JSON object per line, `{kind:"text"|"tool_use"|"done"|"error", ...}`. This is NOT SSE — no `data:` prefixes, no blank-line framing; the client splits on `\n`. Browser reads it via `fetch` + `ReadableStream` (POST can't use EventSource). Client abort = cancel. 409 if that chat is busy. |
+| `/api/subjects/:s/chats/:id/cancel` | POST | kill that chat's running turn (process group) |
 | `/api/subjects/:s/transcribe` | POST | body `{ file, force?, language?, translate? }` (§6.5 language options); runs §6.5, responds with the same NDJSON progress stream (`progress`/`done`/`error`). 409 if any transcription is already running (global, not per-subject). Client abort = cancel + partial-output cleanup. |
 
 Bind to `127.0.0.1:4321` only. JSONL persistence timing: the user message when the POST arrives; `tool_use` lines as they stream; at `result`, one assistant line with all text blocks concatenated in arrival order. History must survive a mid-turn crash with at least the user side intact.
@@ -286,8 +289,8 @@ Bind to `127.0.0.1:4321` only. JSONL persistence timing: the user message when t
 **M1 — Subject page + previews.** File list UI, PDF embed, video player, markdown rendering, `_generated/` section (empty state fine — and treat a *missing* `_generated/` dir as empty rather than erroring; it doesn't exist until Claude first writes to it).
 *Accept:* can open `mml-book.pdf`, play a lecture `.mp4` with seeking, and view a rendered markdown file from the UI.
 
-**M2 — Chat.** §6 in full: spawn, stream to browser, session persistence, resume, cancel, error bubbles, JSONL history.
-*Accept:* (1) ask "what files do you have?" → Claude lists the actual PDFs; (2) ask a follow-up referencing the first answer, **restart the server between the two messages** → Claude still has context (proves `--resume` path); (3) ask it to quote from a PDF page (proves poppler); (4) Cancel mid-turn leaves the app responsive and the next message works.
+**M2 — Chats.** §6 in full plus the chat list: chat CRUD (create general/focused, rename, delete, switcher UI), spawn, stream to browser, per-chat session persistence, resume, cancel, error bubbles, per-chat JSONL history.
+*Accept:* (1) ask "what files do you have?" → Claude lists the actual PDFs; (2) ask a follow-up referencing the first answer, **restart the server between the two messages** → Claude still has context (proves the per-chat `--resume` path); (3) ask it to quote from a PDF page (proves poppler); (4) Cancel mid-turn leaves the app responsive and the next message works; (5) **two chats in the same subject hold independent contexts** — tell chat A one fact, confirm chat B doesn't know it, and both survive a server restart; (6) a chat focused on `mml-book.pdf` answers a generic question by grounding in that book specifically.
 *If claude errors immediately:* run the same command by hand in a terminal (print the exact spawned argv in server logs at debug level) — flag typos and permission-mode issues show up instantly there. *If the resume check (2) fails:* confirm `state.json` actually holds a uuid after the first turn and that the logged argv of the second turn contains `--resume <that uuid>`.
 
 **M3 — Study actions + generated artifacts.** §7.0 profile loading, all §7.2 buttons, `_generated/` listing refreshes after a turn completes, HTML explainers render in the sandboxed iframe.
