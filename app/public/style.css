@@ -92,11 +92,17 @@ h1 {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
   min-width: 0;
+  /* Grid and flex items default to min-height:auto, so a tall preview (a long rendered transcript
+     is ~18000px) stretches the workspace row and drags the chat pane down with it, pushing the
+     actions bar and composer far below the viewport. min-height:0 lets these panes shrink to the
+     row and scroll internally instead. */
+  min-height: 0;
   border-right: 1px solid var(--rule);
 }
 
 /* File list */
 .files {
+  min-height: 0;
   overflow-y: auto;
   padding: 0.5rem 0 1rem;
   border-right: 1px solid var(--rule);
@@ -156,7 +162,7 @@ h1 {
 .files .empty { padding: 0.25rem 1rem; font-size: 0.85rem; }
 
 /* Preview */
-.preview { display: flex; flex-direction: column; min-width: 0; background: var(--surface); }
+.preview { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--surface); }
 .preview-bar {
   display: flex;
   align-items: baseline;
@@ -214,8 +220,11 @@ h1 {
 
 /* Chat pane — a list of independent conversations per subject */
 .chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--paper); }
+/* Wraps to a second line: the model/effort selects would otherwise squeeze the chat switcher
+   (flex: 1) down to a bare chevron in a 400px pane. */
 .chat-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
   padding: 0.5rem 0.75rem;
@@ -223,7 +232,9 @@ h1 {
   background: var(--surface);
 }
 .chat-switcher, .chat-rename-input {
-  flex: 1;
+  /* 100% basis: the switcher takes the whole first row so the model/effort selects and the
+     +New/rename/delete buttons wrap onto a second one, instead of squeezing it to a chevron. */
+  flex: 1 1 100%;
   min-width: 0;
   font: inherit;
   font-size: 0.9rem;
@@ -282,6 +293,49 @@ h1 {
 .msg.tool { color: var(--muted); font-family: var(--mono); font-size: 0.75rem; padding: 0 0.25rem; }
 .msg.tool::before { content: "⚙ "; }
 .msg.error-bubble { color: #9b2c2c; background: #fbf1f1; border: 1px solid #ecc8c8; border-radius: 6px; padding: 0.45rem 0.7rem; font-size: 0.85rem; white-space: pre-wrap; }
+.chat-config {
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.2rem;
+  max-width: 7.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.chat-config:disabled { opacity: 0.45; cursor: not-allowed; }
+.chat-model-actual { color: var(--muted); font-size: 0.68rem; white-space: nowrap; }
+
+/* Study actions (§7.2) — sits between the log and the composer */
+.actions { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.5rem 0.75rem; border-top: 1px solid var(--rule); background: var(--surface); }
+.actions-bar { display: flex; flex-direction: column; gap: 0.35rem; }
+.action-context {
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.action-buttons { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.action-buttons .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Setting display on this element would override the UA's [hidden] { display: none }, leaving the
+   row permanently visible while el.hidden still reports true — so keep the hidden case explicit. */
+.action-input { display: flex; align-items: center; gap: 0.35rem; }
+.action-input[hidden] { display: none; }
+.action-label { color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
+.action-input input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.action-input input:focus { outline: none; border-color: var(--accent); }
+
 .composer { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.6rem 0.75rem 0.75rem; border-top: 1px solid var(--rule); background: var(--surface); }
 .composer textarea {
   width: 100%;

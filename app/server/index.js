@@ -120,9 +120,25 @@ app.patch("/api/subjects/:s/chats/:id", async (req, res) => {
   if (!dir) return;
   const chat = requireChat(req, res);
   if (!chat) return;
-  const title = typeof req.body?.title === "string" ? req.body.title.replace(/\s+/g, " ").trim().slice(0, 80) : "";
-  if (!title) return res.status(400).json({ error: "title required" });
-  res.json(await store.updateChat(req.params.s, chat.id, { title }));
+  const body = req.body ?? {};
+  const patch = {};
+  if ("title" in body) {
+    const title = typeof body.title === "string" ? body.title.replace(/\s+/g, " ").trim().slice(0, 80) : "";
+    if (!title) return res.status(400).json({ error: "title required" });
+    patch.title = title;
+  }
+  // Allow-listed against the same arrays the dropdown renders from. Not a shell-injection guard
+  // (spawn is array-form, no shell) — it turns a bad value into a 400 naming the field instead of
+  // an opaque CLI failure at spawn time. null/"" clears back to inheriting settings.json.
+  for (const [field, allowed] of [["model", store.MODELS], ["effort", store.EFFORTS]]) {
+    if (!(field in body)) continue;
+    const value = body[field];
+    if (value === null || value === "") { patch[field] = null; continue; }
+    if (!allowed.includes(value)) return res.status(400).json({ error: `${field} must be one of: ${allowed.join(", ")}` });
+    patch[field] = value;
+  }
+  if (Object.keys(patch).length === 0) return res.status(400).json({ error: "nothing to update" });
+  res.json(await store.updateChat(req.params.s, chat.id, patch));
 });
 
 app.delete("/api/subjects/:s/chats/:id", async (req, res) => {
@@ -218,9 +234,21 @@ app.post("/api/subjects/:s/chats/:id/messages", async (req, res) => {
   };
 
   const turn = runTurn(
-    { subjectDir: dir, prompt: message, systemPromptFile: promptPath, resumeId: chat.claudeSessionId },
     {
-      init: (sid) => bg(store.updateChat(subject, chat.id, { claudeSessionId: sid })),
+      subjectDir: dir,
+      prompt: message,
+      systemPromptFile: promptPath,
+      resumeId: chat.claudeSessionId,
+      model: chat.model ?? null,
+      effort: chat.effort ?? null,
+    },
+    {
+      init: (sid, model) => {
+        bg(store.updateChat(subject, chat.id, { claudeSessionId: sid }));
+        // Report the model the turn is ACTUALLY running, so the head can never show a model the
+        // CLI ignored (e.g. if --resume were to pin the original one).
+        if (model) send({ kind: "model", text: model });
+      },
       delta: (text) => send({ kind: "delta", text }),
       text: (text) => {
         texts.push(text);

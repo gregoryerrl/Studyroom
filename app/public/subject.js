@@ -74,6 +74,8 @@ function select(entry) {
   url.searchParams.set("file", entry.path);
   history.replaceState(null, "", url);
   renderPreview(entry);
+  updateActionContext(); // select() is not on the updateComposer() path — without this the
+                         // action row would stay stale until an unrelated busy transition
 }
 
 document.addEventListener("click", (ev) => {
@@ -233,6 +235,7 @@ async function openChat(id) {
     }
   }
   renderLog(true);
+  syncChatConfig();
   updateComposer();
   $("#composer-input").focus();
 }
@@ -280,6 +283,38 @@ function updateComposer() {
   $("#chat-cancel").hidden = !cache.busy;
   $("#chat-status").textContent = cache.busy ? "Claude is working…" : "";
   $("#chat-delete").disabled = cache.busy;
+  // Changing model/effort cannot affect a turn already in flight, so offering it mid-turn
+  // would be a lie about what the running turn is doing.
+  $("#chat-model").disabled = cache.busy;
+  $("#chat-effort").disabled = cache.busy;
+  updateActionContext(); // covers openChat/sendMessage/finishStream, which all call this
+}
+
+/** Reflect the active chat's saved model/effort into the two selects. */
+function syncChatConfig() {
+  const chat = activeChat();
+  $("#chat-model").value = chat?.model ?? "";
+  $("#chat-effort").value = chat?.effort ?? "";
+  $("#chat-model-actual").textContent = "";
+}
+
+/**
+ * Persist one config field. `""` clears it back to inheriting settings.json. On failure the select
+ * is reverted, so it always shows what the server actually stored rather than what was attempted.
+ */
+async function setChatConfig(field, value) {
+  const chat = activeChat();
+  if (!chat) return;
+  const previous = chat[field] ?? "";
+  try {
+    const res = await api(`/chats/${chat.id}`, jsonOpts("PATCH", { [field]: value || null }));
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+    chat[field] = value || null;
+  } catch (err) {
+    $(`#chat-${field}`).value = previous;
+    getCache(chat.id).messages.push({ kind: "error", text: `Could not set ${field}: ${err.message}` });
+    renderLog(true);
+  }
 }
 
 // ---- sending / streaming ----
@@ -343,6 +378,9 @@ function handleEvent(id, ev) {
     case "delta": s.delta += ev.text; break;
     case "text": s.finalized.push(ev.text); s.delta = ""; break; // authoritative block: push, never wipe earlier ones
     case "tool_use": cache.messages.push({ kind: "tool_use", tool: ev.tool, text: ev.text }); break;
+    // The model the CLI reports it is actually running. Shown beside the dropdown so the UI can
+    // never claim a model the turn ignored — e.g. if --resume were to pin the original one.
+    case "model": if (id === activeChatId) $("#chat-model-actual").textContent = `on ${ev.text}`; break;
     case "done": finishStream(id, null); return true;
     case "error": finishStream(id, ev.text || "Something went wrong."); return true;
     default: break;
@@ -362,6 +400,12 @@ function finishStream(id, errorText) {
   cache.busy = false;
   cache.controller = null;
   if (id === activeChatId) { renderLog(); updateComposer(); }
+  // A finished turn may have written into _generated/. finishStream is synchronous, so this is a
+  // deliberate floating promise — the catch keeps a transient failure from becoming an unhandled
+  // rejection plus a silently stale list. Cancelled turns refresh too: Claude may already have
+  // written files before the kill. renderList re-applies .active from selectedPath, so the
+  // current selection survives the refresh.
+  loadFiles().catch((err) => console.warn("file list refresh failed:", err.message));
 }
 
 async function cancelTurn() {
@@ -426,12 +470,163 @@ function startRename() {
   input.onblur = () => finish(true);
 }
 
+// ---- study actions (design doc §7.2) ----
+
+/** Local date, not toISOString() — at UTC+8 that would stamp yesterday on every evening file. */
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+/** File name or topic → slug for artifact paths: no extension, no "- handouts" tail, ≤40 chars. */
+function slugify(s) {
+  return String(s)
+    .replace(/\.[^./]+$/, "")
+    .replace(/[\s-]*handouts$/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/, "");
+}
+
+/** What an action targets: the previewed file, else the chat's focus file, else null. */
+function actionContextFile() {
+  const byPath = (p) => (p ? entries.find((e) => e.path === p) ?? null : null);
+  return byPath(selectedPath) ?? byPath(activeChat()?.focus);
+}
+
+// A page range is APPENDED after the verbatim §7.2 text rather than edited into it — §0 makes the
+// templates the spec. Summarize is the exception: its own template carries the slot.
+const withPages = (text, pages) => (pages ? `${text} Focus on pages ${pages}.` : text);
+
+// §7.2 templates, verbatim. `needs`: what scopes the action. `pages`: file-scoped actions that
+// accept an optional PDF page range — every PDF here is 40–417 pages, all over §7.1's ~30-page
+// threshold, so the affordance has to reach Digest on mml-book.pdf, not just Summarize.
+const ACTIONS = {
+  digest: {
+    needs: "either", pages: true,
+    prompt: ({ file, topic, pages, date }) => withPages(
+      `Create a complete study kit for ${file ? `"${file.path}"` : topic} in _generated/digest-${slugify(file ? file.name : topic)}-${date}/ with these files: notes.md (structured summary of the material), visual.html (self-contained visual explainer per the rules: concept map of how the ideas relate, diagrams of the key mechanisms), worked-examples.md (step-by-step solved problems with the reasoning spelled out), flashcards.md (Q:/A: format), quiz.md (questions + "## Answers"). Ground everything in the actual material and tailor it to my learner profile. When done, list each file with a one-line description.`,
+      pages),
+  },
+  summarize: {
+    needs: "file", pages: true,
+    prompt: ({ file, pages }) =>
+      `Summarize "${file.path}"${pages ? `, pages ${pages}` : ""}. Save to _generated/ and give me the key points inline.`,
+  },
+  quiz: {
+    needs: "either", pages: true,
+    prompt: ({ file, topic, pages }) => withPages(
+      `Create a 10-question quiz (mix of multiple choice and short answer) on ${file ? `"${file.path}"` : topic}. Save to _generated/. Show me the questions only; I'll answer here in chat, then you grade me against the key.`,
+      pages),
+  },
+  flashcards: {
+    needs: "either", pages: true,
+    prompt: ({ file, topic, pages }) => withPages(
+      `Create ~20 flashcards on ${file ? `"${file.path}"` : topic} in the Q:/A: format. Save to _generated/ and show them inline.`,
+      pages),
+  },
+  explain: {
+    needs: "topic", pages: false,
+    prompt: ({ topic }) =>
+      `Explain ${topic} as if preparing me for an exam: definition, intuition, one worked example from the course materials, common pitfalls. Cite where in the materials it's covered.`,
+  },
+  visual: {
+    needs: "topic", pages: false,
+    prompt: ({ topic, date }) =>
+      `Create a self-contained visual explainer for ${topic} at _generated/visual-${slugify(topic)}-${date}.html. Inline CSS + inline SVG only, no JavaScript. Show the structure spatially: concept maps, flow diagrams, labeled figures. Text only where a diagram can't carry it.`,
+  },
+  research: {
+    needs: "topic", pages: false,
+    prompt: ({ topic, date }) =>
+      `Research ${topic} using web search. Cross-reference what you find with the course materials where relevant, and note agreements or differences. Save a note to _generated/research-${slugify(topic)}-${date}.md with a "## Sources" section listing every URL used. Give me the key findings inline.`,
+  },
+};
+
+const INPUT_LABELS = { pages: "Pages (optional), e.g. 12–30", research: "Question to research…", visual: "Topic for the explainer…", topic: "Topic or concept…" };
+
+/**
+ * What the single input row must collect, or null to send straight away. A file in context scopes
+ * the action WHATEVER its type; the file's type only decides whether a page range is worth asking
+ * for. (Selecting a .md transcript and pressing Quiz me must run file-scoped, not ask for a topic.)
+ */
+function actionNeedsInput(a, file) {
+  if (a.needs === "topic") return "topic";
+  if (!file) return a.needs === "either" ? "topic" : null; // "file" with no file: button is disabled
+  return a.pages && file.type === "pdf" ? "pages" : null;
+}
+
+// { kind, want, file } while the input row is open. The context file is captured HERE, at the
+// moment the row's label promised what it would collect, and sendAction() uses the captured pair —
+// never live state. Re-deriving at submit lets a selection change made while the row is open
+// reinterpret what the user typed (a topic read as a page range, or typed input silently dropped).
+let pendingAction = null;
+
+function showActionInput(kind, want, file) {
+  pendingAction = { kind, want, file };
+  $("#action-label").textContent = want === "pages" ? INPUT_LABELS.pages : (INPUT_LABELS[kind] ?? INPUT_LABELS.topic);
+  $("#action-form").hidden = false;
+  const input = $("#action-topic");
+  input.value = kind === "visual" && file ? file.name.replace(/\.[^./]+$/, "") : "";
+  input.focus();
+  input.select();
+}
+
+function hideActionInput() {
+  pendingAction = null;
+  $("#action-form").hidden = true;
+  $("#action-topic").value = "";
+}
+
+function runAction(kind) {
+  const a = ACTIONS[kind];
+  if (!a || !activeChatId) return;
+  if (getCache(activeChatId).busy) return;          // backstop — the buttons are disabled while busy
+  const file = actionContextFile();
+  if (a.needs === "file" && !file) return;          // backstop — the button is disabled without one
+  const want = actionNeedsInput(a, file);
+  if (want) showActionInput(kind, want, file);
+  else sendAction({ kind, want: null, file }, "");
+}
+
+/** Sends from the CAPTURED {kind, want, file} — see pendingAction. Never re-derives context. */
+function sendAction({ kind, want, file }, value) {
+  const a = ACTIONS[kind];
+  const text = value.trim();
+  if (want === "topic" && !text) return;            // required and blank: leave the row open
+  const prompt = a.prompt({
+    file,
+    topic: want === "topic" ? text : "",
+    pages: want === "pages" ? text : "",
+    date: todayISO(),
+  });
+  hideActionInput();
+  sendMessage(prompt);
+}
+
+/** Context line + button availability. Called from select() and from updateComposer(). */
+function updateActionContext() {
+  const file = actionContextFile();
+  const busy = activeChatId ? getCache(activeChatId).busy : false;
+  $("#action-context").textContent = file ? `Context: ${file.name}` : "Select a file on the left, or type a topic";
+  for (const btn of document.querySelectorAll("[data-action]")) {
+    const a = ACTIONS[btn.dataset.action];
+    btn.disabled = busy || (a?.needs === "file" && !file);
+  }
+  // Close an open row when the turn starts, or when the context file changed under it — its label
+  // described the old context, so leaving it open would invite typing an answer to a stale question.
+  if (busy || (pendingAction && (file?.path ?? null) !== (pendingAction.file?.path ?? null))) hideActionInput();
+}
+
 // ---- wiring ----
 $("#chat-switcher").addEventListener("change", (e) => openChat(e.target.value));
 $("#chat-new").addEventListener("click", () => newChat());
 $("#chat-rename").addEventListener("click", startRename);
 $("#chat-delete").addEventListener("click", deleteChat);
 $("#chat-cancel").addEventListener("click", cancelTurn);
+$("#chat-model").addEventListener("change", (e) => setChatConfig("model", e.target.value));
+$("#chat-effort").addEventListener("change", (e) => setChatConfig("effort", e.target.value));
 $("#focus-chat").addEventListener("click", () => { if (selectedPath) newChat(selectedPath); });
 $("#composer").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -440,6 +635,19 @@ $("#composer").addEventListener("submit", (e) => {
   if (!text || getCache(activeChatId).busy) return;
   input.value = "";
   sendMessage(text);
+});
+$(".action-buttons").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-action]");
+  if (btn && !btn.disabled) runAction(btn.dataset.action);
+});
+$("#action-form").addEventListener("submit", (e) => {
+  e.preventDefault(); // the form has no action attribute: an unguarded submit would GET this URL
+                      // with the query string replaced, dropping ?file= and ?chat= and reloading
+  if (pendingAction) sendAction(pendingAction, $("#action-topic").value);
+});
+$("#action-cancel").addEventListener("click", hideActionInput);
+$("#action-topic").addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { e.preventDefault(); hideActionInput(); }
 });
 $("#composer-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {

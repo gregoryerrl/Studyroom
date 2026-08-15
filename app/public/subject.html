@@ -39,6 +39,22 @@
       <div class="chat-head">
         <select id="chat-switcher" class="chat-switcher" title="Switch chat" aria-label="Chat"></select>
         <input id="chat-rename-input" class="chat-rename-input" type="text" maxlength="80" hidden aria-label="Chat title">
+        <select id="chat-model" class="chat-config" title="Model for this chat. Applies to the next turn; other chats are unaffected.">
+          <option value="">Model: inherit</option>
+          <option value="opus">Opus</option>
+          <option value="sonnet">Sonnet</option>
+          <option value="haiku">Haiku</option>
+          <option value="fable">Fable</option>
+        </select>
+        <select id="chat-effort" class="chat-config" title="Effort for this chat (requested — the CLI does not report back which effort it used).">
+          <option value="">Effort: default</option>
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+          <option value="xhigh">xhigh</option>
+          <option value="max">max</option>
+        </select>
+        <span id="chat-model-actual" class="chat-model-actual" title="The model the last turn actually ran on, reported by the CLI itself."></span>
         <button type="button" id="chat-new" class="btn small" title="Start a new chat about all materials">+ New</button>
         <button type="button" id="chat-rename" class="btn small icon" title="Rename this chat" aria-label="Rename chat">✎</button>
         <button type="button" id="chat-delete" class="btn small icon" title="Delete this chat" aria-label="Delete chat">🗑</button>

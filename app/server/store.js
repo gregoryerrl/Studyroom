@@ -71,9 +71,22 @@ export function getChat(subject, id) {
   return subjectState(subject).chats.find((c) => c.id === id) ?? null;
 }
 
+/**
+ * Model/effort values the app will pass to the CLI. Exported so the PATCH route and the client's
+ * dropdown render from ONE list and cannot drift apart.
+ *
+ * DEFAULT_MODEL is deliberately not null: inheriting ~/.claude/settings.json resolves to
+ * claude-fable-5[1m], which is out of usage credits, so a null default would hand every new chat
+ * the exact "out of usage credits" error this dropdown exists to escape. "" means inherit, and
+ * stays available as an explicit choice.
+ */
+export const MODELS = ["opus", "sonnet", "haiku", "fable"];
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+export const DEFAULT_MODEL = "opus";
+
 export async function createChat(subject, { focus = null } = {}) {
   const now = Date.now();
-  const chat = { id: crypto.randomUUID(), title: null, claudeSessionId: null, focus, createdAt: now, updatedAt: now };
+  const chat = { id: crypto.randomUUID(), title: null, claudeSessionId: null, focus, model: DEFAULT_MODEL, effort: null, createdAt: now, updatedAt: now };
   subjectState(subject).chats.push(chat);
   await saveState();
   return chat;

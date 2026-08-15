@@ -37,7 +37,7 @@ function childEnv() {
  *   result({ failed, message }) — turn finished (exactly once, also on crash/cancel)
  * Returns { cancel() } which kills the whole process group.
  */
-export function runTurn({ subjectDir, prompt, systemPromptFile, resumeId }, on) {
+export function runTurn({ subjectDir, prompt, systemPromptFile, resumeId, model, effort }, on) {
   const args = [
     "-p", prompt,
     "--output-format", "stream-json",
@@ -48,6 +48,10 @@ export function runTurn({ subjectDir, prompt, systemPromptFile, resumeId }, on) 
     "--allowedTools", ALLOWED_TOOLS,
     "--disallowedTools", DENIED_TOOLS,
   ];
+  // Unset → nothing appended, so a chat left on "inherit" spawns exactly as it did before this
+  // existed. Never ANTHROPIC_* (§6.1) — these are spawn flags, so the user's shell stays untouched.
+  if (model) args.push("--model", model);
+  if (effort) args.push("--effort", effort);
   if (resumeId) args.push("--resume", resumeId);
   console.debug(`[claude] spawn (cwd=${subjectDir}) claude ${args.map((a) => (a === prompt ? JSON.stringify(a.slice(0, 60)) : a)).join(" ")}`);
 
@@ -78,7 +82,10 @@ export function runTurn({ subjectDir, prompt, systemPromptFile, resumeId }, on) 
       return; // a bad line must never kill the pump
     }
     if (ev.type === "system" && ev.subtype === "init") {
-      if (ev.session_id) on.init(ev.session_id);
+      // init reports the model actually in use — surfaced to the UI so the dropdown can never
+      // claim a model the turn isn't running. NOTE: init carries no effort field, so the effort
+      // setting cannot be confirmed the same way; the UI labels it "requested" for that reason.
+      if (ev.session_id) on.init(ev.session_id, ev.model ?? null);
     } else if (ev.type === "assistant") {
       for (const block of ev.message?.content ?? []) {
         if (block.type === "text") on.text(block.text);
