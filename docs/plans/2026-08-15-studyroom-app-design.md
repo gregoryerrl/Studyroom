@@ -15,7 +15,7 @@
 
 ## 1. What this is
 
-Studyroom is a small local web app that helps Gregory study for university using the materials already sitting in `~/Studyroom`. Each top-level folder there is one course (currently `AI201` — Artificial Intelligence, and `AI211` — linear algebra; more will be added each semester by simply creating folders). The app is a viewer + a per-subject Claude chat: Claude runs as the **Claude Code CLI** (`claude`) with its working directory pinned to the subject folder, so it reads the actual PDFs itself with its own Read/Grep tools — no RAG pipeline, no embeddings, no API keys.
+Studyroom is a small local web app that helps Gregory study for university using the materials already sitting in `~/Studyroom`. Each top-level folder there is one course (currently `AI201` — Artificial Intelligence, and `AI211` — linear algebra; more will be added each semester by simply creating folders). The app is a viewer + per-subject Claude chats: Claude runs as the **Claude Code CLI** (`claude`) with its working directory pinned to the subject folder, so it reads the actual PDFs itself with its own Read/Grep tools — no RAG pipeline, no embeddings, no API keys.
 
 Beyond Q&A, the app is a **digest engine**: its job is to make Gregory *really* nail the knowledge in any material he drops in, whatever kind of learner the topic demands — so every material (PDF chapter, lecture transcript, topic) can be turned into new study artifacts in multiple modes: visual explainers (diagrams, concept maps), structured notes, technically deep worked examples, flashcards, quizzes. All generation is tuned by a learner profile (§7.0). A research action extends past the course materials via web search, saved with sources.
 
@@ -75,7 +75,7 @@ server.js (Express)
    ├─ REST: subjects, files, chat history
    ├─ POST chat → spawn `claude -p …` (cwd = subject dir) → parse stream-json stdout
    │       → stream text/tool events to browser → persist to chat log at turn end
-   └─ state: ~/Studyroom/.studyroom/  (state.json + chats/<subject>.jsonl)
+   └─ state: ~/Studyroom/.studyroom/  (state.json + chats/<Subject>/<chatId>.jsonl)
 ```
 
 Suggested layout (keep it this small — everything under `app/` in this repo):
@@ -141,9 +141,9 @@ export function spawnTurn({ subjectDir, prompt, systemPromptFile, resumeId }) {
 
 Rules that came from bot-hq's scar tissue:
 
-- **Always pin `cwd`, never inherit.** An unpinned cwd makes Claude adopt whatever repo/CLAUDE.md it lands in.
+- **Always pin `cwd`, never inherit.** An unpinned cwd makes Claude adopt whatever repo/CLAUDE.md it lands in. Related: **never add a `CLAUDE.md` at this repo's root** — Claude Code loads CLAUDE.mds from parent directories, so subject-folder chats would silently inherit it.
 - **Permission posture:** `--dangerously-skip-permissions` disables deny rules entirely, so it can never enforce a tool boundary. `dontAsk` + allowlist + denylist is the only mechanical option, and it fails closed. Studyroom needs Write/Edit (for `_generated/`) but has no reason to grant Bash — so don't.
-- The system prompt goes via `--append-system-prompt-file <path>` (write it to `<root>/.studyroom/<subject>-system-prompt.txt` — the same `.studyroom/` dir as §5, under the data root, not the app repo — before each spawn). The file form avoids argv-length issues and is what bot-hq uses; the inline `--append-system-prompt` also exists if ever preferred.
+- The system prompt goes via `--append-system-prompt-file <path>`, written to `<root>/.studyroom/prompt-<chatId>.txt` before each spawn — **per chat, not per subject**, because focused chats get an extra line (§7.1) and two chats of one subject may spawn concurrently. The file form avoids argv-length issues and is what bot-hq uses; the inline `--append-system-prompt` also exists if ever preferred.
 - One turn at a time **per chat** (in-memory busy flag per chat id; return 409 if that chat is busy). Different chats — same subject or not — may run turns in parallel; they're independent Claude sessions, and the M4/24GB machine handles several fine. (If parallel `_generated/` writes ever collide in practice, serialize per subject then — not before.)
 
 ### 6.2 Parsing stdout (newline-delimited stream-json)
@@ -160,7 +160,7 @@ rl.on("line", (raw) => {
   // ^ a bad line must never kill the pump — log and skip.
 
   if (ev.type === "system" && ev.subtype === "init") {
-    saveSessionId(subject, ev.session_id);          // THE session-continuity mechanism, see 6.3
+    saveSessionId(chatId, ev.session_id);           // THE session-continuity mechanism, see 6.3
   } else if (ev.type === "assistant") {
     for (const block of ev.message?.content ?? []) {
       if (block.type === "text")     emit({ kind: "text", text: block.text });
@@ -216,7 +216,7 @@ Claude has no video/audio input, so lecture videos become material via a one-tim
 
 A freeform markdown file where Gregory describes how he learns best (visual, technical depth, language preferences, what kinds of questions help). The server appends it to **every** system prompt under a `## How Gregory learns best` heading, so all chat answers and generated artifacts are tailored without per-request ceremony. A starter version exists at `~/Studyroom/profile.md` — Gregory edits it over time; treat a missing file as empty. This one file is the "no matter what kind of learner I am" mechanism: changing it changes how everything is generated from then on.
 
-### 7.1 Per-subject system prompt (regenerated each spawn into `.studyroom/<subject>-system-prompt.txt`)
+### 7.1 System prompt (regenerated each spawn into `.studyroom/prompt-<chatId>.txt`)
 
 ```
 You are a study assistant for the university course "<SUBJECT_NAME>".
@@ -298,7 +298,7 @@ Bind to `127.0.0.1:4321` only. JSONL persistence timing: the user message when t
 *Accept:* (1) "Make flashcards on eigenvalues" produces a `Q:/A:` file in `AI211/_generated/` that renders in the file view; (2) the Digest action on AI211 Chapter 7 produces the full kit folder including a `visual.html` that displays diagrams in the iframe; (3) a Research action produces a note with a `## Sources` section of URLs (proves WebSearch works under the §6.1 permission flags); (4) editing `profile.md` visibly changes the style of the next generation.
 
 **M4 — Video transcription.** mlx-whisper is already installed, flags verified, model downloaded (§2, §11) — and a reference transcript from this exact pipeline already exists; match its format. §6.5 in full: Transcribe button + badge, progress stream, SRT→markdown with dedupe, global single-job lock.
-*Accept:* (1) transcribing `AI201/Lecture_2_Intelligent_Agents.mp4` (the shorter one) produces `_generated/transcripts/Lecture_2_Intelligent_Agents.md` with `[HH:MM:SS]` markers; (2) asking the AI201 chat "what did Lecture 2 cover? quote it with timestamps" gets an answer quoting the transcript; (3) starting a second transcription while one runs returns 409.
+*Accept:* (1) transcribing `AI201/Lecture_1_What_is_AI.mp4` — **deliberately left untranscribed as this test's material** — produces `_generated/transcripts/Lecture_1_What_is_AI.md` with `[HH:MM:SS]` markers and no repeated-segment tail; (2) requesting Lecture_2 *without* `force` returns the existing transcript path immediately (proves idempotence); (3) asking an AI201 chat "what did Lecture 1 cover? quote it with timestamps" gets an answer quoting the new transcript; (4) starting a second transcription while one runs returns 409.
 
 **M5 (optional polish) — Flashcard renderer.** Parse `Q:/A:` markdown into click-to-reveal cards on the subject page. No scheduling logic.
 
