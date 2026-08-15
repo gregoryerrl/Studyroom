@@ -8,6 +8,8 @@
 
 Studyroom is a small local web app that helps Gregory study for university using the materials already sitting in `~/Studyroom`. Each top-level folder there is one course (currently `AI201` — Artificial Intelligence, and `AI211` — linear algebra; more will be added each semester by simply creating folders). The app is a viewer + a per-subject Claude chat: Claude runs as the **Claude Code CLI** (`claude`) with its working directory pinned to the subject folder, so it reads the actual PDFs itself with its own Read/Grep tools — no RAG pipeline, no embeddings, no API keys.
 
+Beyond Q&A, the app is a **digest engine**: its job is to make Gregory *really* nail the knowledge in any material he drops in, whatever kind of learner the topic demands — so every material (PDF chapter, lecture transcript, topic) can be turned into new study artifacts in multiple modes: visual explainers (diagrams, concept maps), structured notes, technically deep worked examples, flashcards, quizzes. All generation is tuned by a learner profile (§7.0). A research action extends past the course materials via web search, saved with sources.
+
 **Guiding principles (do not violate):**
 
 - **Nothing fancy. 100% practical.** Fewest moving parts that work. No database server, no auth, no cloud, no Docker, no build pipeline unless unavoidable.
@@ -22,10 +24,12 @@ Studyroom is a small local web app that helps Gregory study for university using
 | Machine | macOS 26.5.2, Apple M4, 24 GB RAM |
 | Node | v22.14.0 (no bun) |
 | Claude CLI | 2.1.233, installed and authenticated |
-| poppler (`pdftoppm`/`pdftotext`) | **MISSING — must install** |
+| poppler (`pdftoppm`/`pdftotext`) | installed 2026-08-15 (pdftoppm 26.08.0) |
 | ffmpeg | installed (`/opt/homebrew/bin/ffmpeg`) |
 | uv | installed; Python 3.14 present |
-| mlx-whisper (local transcription) | **MISSING — install for M4** (`uv tool install mlx-whisper`) |
+| mlx-whisper (local transcription) | installed 2026-08-15; `whisper-large-v3-turbo` model already downloaded |
+| Claude-reads-a-PDF check | **PASSED** 2026-08-15 — quoted AI211 Chapter 1 objectives correctly |
+| Reference transcript | `AI201/_generated/transcripts/Lecture_2_Intelligent_Agents.md` already exists (produced by hand-running §6.5's exact pipeline) — M4's output format must match it |
 | Data dir | `~/Studyroom` (subjects: `AI201`, `AI211`); materials are PDFs (incl. one 400+ page textbook `mml-book.pdf`) plus lecture videos (`.mp4`, hundreds of MB each) |
 | Data-dir git remote | `https://github.com/gregoryerrl/Studyroom.git` — `~/Studyroom` is a git repo tracking this doc (and whatever Gregory chooses to add: materials, `_generated/`). `.studyroom/` state and chat logs are gitignored. |
 | App repo (to create) | `~/Projects/studyroom` |
@@ -34,9 +38,8 @@ Studyroom is a small local web app that helps Gregory study for university using
 **Setup prerequisites (M0, before anything else):**
 
 ```sh
-brew install poppler   # Claude Code renders PDF pages via pdftoppm; without this it cannot read the course PDFs
+# poppler and mlx-whisper were already installed + verified on 2026-08-15 — only this remains:
 mkdir -p ~/Projects/studyroom && cd ~/Projects/studyroom && git init
-uv tool install mlx-whisper   # M4-milestone prerequisite (video transcription); model auto-downloads (~1.5 GB) on first run
 ```
 
 Verify PDF reading works before building the chat: run `claude -p "Read the first 2 pages of 'CHAPTER 1 Systems of Linear Equations - handouts.pdf' and quote one sentence." --output-format text` from inside `~/Studyroom/AI211`. If it can't read the PDF, stop and fix that first — the whole app depends on it.
@@ -44,9 +47,9 @@ Verify PDF reading works before building the chat: run `claude -p "Read the firs
 ## 3. v1 scope
 
 1. **Dashboard** — subjects auto-discovered from `$STUDYROOM_DIR` (default `~/Studyroom`). A subject is any top-level directory whose name does not start with `.` or `_` and is not `docs`. Show per-subject file count and whether `_generated/` has content.
-2. **Subject page** — file list (materials + `_generated/` in its own section) with in-browser preview: PDFs via `<embed src>` (browser-native viewer), videos via `<video controls>` (Express static serves HTTP Range requests natively, so seeking works with zero extra code), markdown rendered (vendor `marked.min.js` locally, no CDN), text/code as `<pre>`.
+2. **Subject page** — file list (materials + `_generated/` in its own section) with in-browser preview: PDFs via `<embed src>` (browser-native viewer), videos via `<video controls>` (Express static serves HTTP Range requests natively, so seeking works with zero extra code), markdown rendered (vendor `marked.min.js` locally, no CDN), text/code as `<pre>`, and `_generated/*.html` visual explainers in a **sandboxed iframe** (`<iframe sandbox src=…>` — CSS and inline SVG render, scripts are blocked; §7.1 forbids Claude from using JS in explainers anyway).
 3. **Chat per subject** — a conversation with Claude grounded in that subject's folder. Streams responses, shows tool activity ("Reading mml-book.pdf…"), survives server restarts (history + session resume are persisted).
-4. **Quick actions** — buttons that send a canned prompt into the same chat: *Summarize a file*, *Quiz me*, *Make flashcards*, *Explain a concept*. Outputs saved by Claude into `_generated/`.
+4. **Study actions** — buttons that send canned prompts (§7.2) into the same chat, every one of them tuned by the learner profile (§7.0): **Digest** (the flagship — one button turns a file/topic into a complete study kit: notes + visual explainer + worked examples + flashcards + quiz), *Summarize*, *Quiz me*, *Make flashcards*, *Explain a concept*, *Visual explainer* (a self-contained HTML page with inline SVG diagrams — for visual learning), *Research* (web-grounded, beyond the course materials, saved with source URLs). Outputs saved by Claude into `_generated/`.
 5. **Transcribe** — a button on each video file. Claude cannot watch or hear video (model limitation, all current models), so the app runs **local Whisper** (§6.5) to produce a timestamped transcript in `_generated/transcripts/`; from then on the lecture is ordinary text material the chat reads, quotes, and quizzes from. Videos without a transcript show a "not transcribed yet" badge.
 6. **Cancel button** — kills the running turn.
 
@@ -90,6 +93,8 @@ Suggested repo layout (keep it this small):
 - `<root>/<Subject>/` — materials, owned by Gregory. **The app and Claude never modify or delete these.**
 - `<root>/<Subject>/_generated/` — Claude's outputs, markdown files named `<type>-<topic>-<YYYY-MM-DD>.md` (e.g. `flashcards-eigenvalues-2026-08-15.md`). Claude creates this dir itself via its Write tool.
 - `<root>/<Subject>/_generated/transcripts/<video-basename>.md` — app-produced (not Claude-produced) lecture transcripts, §6.5. Text, small, and **committed to git** — the durable, searchable form of the un-pushable videos.
+- `<root>/<Subject>/_generated/digest-<topic>-<date>/` — a Digest action's study kit: `notes.md`, `visual.html`, `worked-examples.md`, `flashcards.md`, `quiz.md`.
+- `<root>/profile.md` — the learner profile (§7.0). A top-level *file*, so subject discovery (directories only) is unaffected. Committed.
 - `<root>/.studyroom/state.json` — `{ "subjects": { "AI211": { "claudeSessionId": "<uuid>" } } }`. Keep state in memory as the source of truth and persist with an atomic write (temp file + rename); never re-read the file mid-run. Node's single thread plus per-subject keys make parallel turns across subjects safe. Server boot creates `.studyroom/` and `.studyroom/chats/` if missing.
 - `<root>/.studyroom/chats/<Subject>.jsonl` — one JSON object per line: `{ "ts": <ms>, "kind": "user"|"assistant"|"tool_use"|"error", "text"?, "tool"? }`. UI renders history from this file; "New chat" archives it to `<Subject>-<timestamp>.jsonl` and clears the session id.
 - **Git:** `~/Studyroom` is a git repo (remote above, private); PDFs and docs are committed. `.gitignore` covers `.DS_Store`, `.studyroom/` (machine state + private chat logs), and **video files** — lecture videos exceed GitHub's 100 MB hard per-file limit and stay local-only (Git LFS is the escape hatch if remote backup is ever needed, but its free tier won't survive a semester of lectures). The app never runs git, and Claude can't either (Bash is denied, §6.1).
@@ -187,14 +192,19 @@ The CLI owns conversation state. Per subject: capture `session_id` from the `ini
 
 Claude has no video/audio input, so lecture videos become material via a one-time local transcription. Same spawn-and-stream machinery as §6.1/§6.2, different binary:
 
-- **Command:** `mlx_whisper <subjectDir>/<video>.mp4 --model mlx-community/whisper-large-v3-turbo --output-dir <tmp> --output-format srt` (mlx-whisper decodes the mp4's audio itself via ffmpeg — no manual extraction step). First run downloads the model (~1.5 GB); runs fully offline after that. **Verify exact flag names with `mlx_whisper --help` before coding** — the shape is right, the spellings are unverified (§11).
-- **Post-process:** parse the SRT (`index / HH:MM:SS,mmm --> … / text` blocks) into markdown at `_generated/transcripts/<video-basename>.md`: title line naming the source video, then paragraphs with a bold `[HH:MM:SS]` marker at least every ~30 seconds.
+- **Command:** `mlx_whisper <subjectDir>/<video>.mp4 --model mlx-community/whisper-large-v3-turbo --output-dir <tmp> --output-format srt` (mlx-whisper decodes the mp4's audio itself via ffmpeg — no manual extraction step). **All flags verified against the installed CLI on 2026-08-15**, model already downloaded; runs fully offline.
+- **Language:** Whisper auto-detects — lectures may be English or Filipino/Taglish (Tagalog `tl` is fully supported; Lecture 2 turned out to be English). Expose two optional request fields: `language` (ISO code, pins detection when auto-detect misfires on code-switched audio → `--language tl`) and `translate` (boolean → `--task translate`, which makes Whisper output English directly). Default: auto-detect, no translation — keep the original wording; Claude reads Taglish fine and §7.1 has it respond in English regardless.
+- **Post-process:** parse the SRT (`index / HH:MM:SS,mmm --> … / text` blocks) into markdown at `_generated/transcripts/<video-basename>.md`: title line naming the source video, then paragraphs with a bold `[HH:MM:SS]` marker at least every ~30 seconds. **Collapse consecutive segments with identical text** — Whisper hallucinates repeat loops during trailing silence (observed on Lecture 2: "Thanks for today." × ~60). The existing reference transcript (§2) was produced by exactly this pipeline; match its format.
 - **Concurrency:** ONE transcription at a time globally (it saturates the GPU/ANE) — global busy flag, 409 otherwise. Chat turns may run concurrently with it.
 - **Progress:** stream mlx_whisper's stderr/stdout lines to the browser over the same NDJSON pattern (`{kind:"progress", line}` … `{kind:"done", path}`); on the M4 expect a fraction of the lecture's runtime.
 - **Idempotent:** skip (return the existing path) if the transcript already exists; a `force: true` body field re-runs it. Cancel = kill the process group, delete partial output.
 - Never modify the video; treat transcripts as append-only material once written (Claude may read them, not edit them — they're under `_generated/` but the §7.1 rules only permit Claude to *create new* files there).
 
 ## 7. Prompts
+
+### 7.0 Learner profile — `<root>/profile.md`
+
+A freeform markdown file where Gregory describes how he learns best (visual, technical depth, language preferences, what kinds of questions help). The server appends it to **every** system prompt under a `## How Gregory learns best` heading, so all chat answers and generated artifacts are tailored without per-request ceremony. A starter version exists at `~/Studyroom/profile.md` — Gregory edits it over time; treat a missing file as empty. This one file is the "no matter what kind of learner I am" mechanism: changing it changes how everything is generated from then on.
 
 ### 7.1 Per-subject system prompt (regenerated each spawn into `.studyroom/<subject>-system-prompt.txt`)
 
@@ -218,7 +228,15 @@ Rules:
   _generated/transcripts/ — read those when asked about a lecture, and cite the
   [HH:MM:SS] timestamps. If a lecture has no transcript yet, say so and suggest
   pressing Transcribe on it in the app.
+- Visual explainers: a single self-contained .html file — inline CSS and inline
+  SVG only. No JavaScript, no external resources (no CDN scripts, fonts, or
+  remote images). Diagram relationships spatially; minimal prose.
+- Materials may be in English or Filipino/Taglish. Respond and generate
+  artifacts in English unless asked otherwise; quote original wording when
+  precision matters.
 ```
+
+After these rules the server appends `## How Gregory learns best` + the contents of `<root>/profile.md` (§7.0).
 
 `<SUBJECT_NAME>` is the folder name; if a syllabus PDF exists, mention it: "The file <name> is the course syllabus."
 
@@ -228,6 +246,9 @@ Rules:
 - **Quiz me:** `Create a 10-question quiz (mix of multiple choice and short answer) on <topic or file>. Save to _generated/. Show me the questions only; I'll answer here in chat, then you grade me against the key.`
 - **Flashcards:** `Create ~20 flashcards on <topic or file> in the Q:/A: format. Save to _generated/ and show them inline.`
 - **Explain:** `Explain <concept> as if preparing me for an exam: definition, intuition, one worked example from the course materials, common pitfalls. Cite where in the materials it's covered.`
+- **Digest (flagship):** `Create a complete study kit for <file or topic> in _generated/digest-<topic>-<date>/ with these files: notes.md (structured summary of the material), visual.html (self-contained visual explainer per the rules: concept map of how the ideas relate, diagrams of the key mechanisms), worked-examples.md (step-by-step solved problems with the reasoning spelled out), flashcards.md (Q:/A: format), quiz.md (questions + "## Answers"). Ground everything in the actual material and tailor it to my learner profile. When done, list each file with a one-line description.`
+- **Visual explainer:** `Create a self-contained visual explainer for <topic> at _generated/visual-<topic>-<date>.html. Inline CSS + inline SVG only, no JavaScript. Show the structure spatially: concept maps, flow diagrams, labeled figures. Text only where a diagram can't carry it.`
+- **Research:** `Research <question> using web search. Cross-reference what you find with the course materials where relevant, and note agreements or differences. Save a note to _generated/research-<topic>-<date>.md with a "## Sources" section listing every URL used. Give me the key findings inline.`
 
 The quiz flow deliberately stays inside the chat (Claude grades follow-up answers via `--resume` context) — no dedicated quiz engine in v1.
 
@@ -242,7 +263,7 @@ The quiz flow deliberately stays inside the chat (Claude grades follow-up answer
 | `/api/subjects/:s/chat` | POST | body `{ message }`; responds with plain **NDJSON** (`Content-Type: application/x-ndjson`): one JSON object per line, `{kind:"text"|"tool_use"|"done"|"error", ...}`. This is NOT SSE — no `data:` prefixes, no blank-line framing; the client splits on `\n`. Browser reads it via `fetch` + `ReadableStream` (POST can't use EventSource). Client abort = cancel. 409 if subject busy. |
 | `/api/subjects/:s/chat/reset` | POST | archive JSONL, clear session id; 409 if subject busy (same flag as chat) |
 | `/api/subjects/:s/cancel` | POST | kill the running turn's process group |
-| `/api/subjects/:s/transcribe` | POST | body `{ file, force? }`; runs §6.5, responds with the same NDJSON progress stream (`progress`/`done`/`error`). 409 if any transcription is already running (global, not per-subject). Client abort = cancel + partial-output cleanup. |
+| `/api/subjects/:s/transcribe` | POST | body `{ file, force?, language?, translate? }` (§6.5 language options); runs §6.5, responds with the same NDJSON progress stream (`progress`/`done`/`error`). 409 if any transcription is already running (global, not per-subject). Client abort = cancel + partial-output cleanup. |
 
 Bind to `127.0.0.1:4321` only. JSONL persistence timing: the user message when the POST arrives; `tool_use` lines as they stream; at `result`, one assistant line with all text blocks concatenated in arrival order. History must survive a mid-turn crash with at least the user side intact.
 
@@ -258,8 +279,8 @@ Bind to `127.0.0.1:4321` only. JSONL persistence timing: the user message when t
 *Accept:* (1) ask "what files do you have?" → Claude lists the actual PDFs; (2) ask a follow-up referencing the first answer, **restart the server between the two messages** → Claude still has context (proves `--resume` path); (3) ask it to quote from a PDF page (proves poppler); (4) Cancel mid-turn leaves the app responsive and the next message works.
 *If claude errors immediately:* run the same command by hand in a terminal (print the exact spawned argv in server logs at debug level) — flag typos and permission-mode issues show up instantly there. *If the resume check (2) fails:* confirm `state.json` actually holds a uuid after the first turn and that the logged argv of the second turn contains `--resume <that uuid>`.
 
-**M3 — Quick actions + generated artifacts.** §7.2 buttons, `_generated/` listing refreshes after a turn completes.
-*Accept:* "Make flashcards on eigenvalues" produces a `Q:/A:` file in `AI211/_generated/` that renders in the file view.
+**M3 — Study actions + generated artifacts.** §7.0 profile loading, all §7.2 buttons, `_generated/` listing refreshes after a turn completes, HTML explainers render in the sandboxed iframe.
+*Accept:* (1) "Make flashcards on eigenvalues" produces a `Q:/A:` file in `AI211/_generated/` that renders in the file view; (2) the Digest action on AI211 Chapter 7 produces the full kit folder including a `visual.html` that displays diagrams in the iframe; (3) a Research action produces a note with a `## Sources` section of URLs (proves WebSearch works under the §6.1 permission flags); (4) editing `profile.md` visibly changes the style of the next generation.
 
 **M4 — Video transcription.** Prereq: `uv tool install mlx-whisper` (verify flags via `mlx_whisper --help` first). §6.5 in full: Transcribe button + badge, progress stream, SRT→markdown, global single-job lock.
 *Accept:* (1) transcribing `AI201/Lecture_2_Intelligent_Agents.mp4` (the shorter one) produces `_generated/transcripts/Lecture_2_Intelligent_Agents.md` with `[HH:MM:SS]` markers; (2) asking the AI201 chat "what did Lecture 2 cover? quote it with timestamps" gets an answer quoting the transcript; (3) starting a second transcription while one runs returns 409.
@@ -279,6 +300,6 @@ Bind to `127.0.0.1:4321` only. JSONL persistence timing: the user message when t
 
 **Not verified — check `claude --help` before using:** `--include-partial-messages` (would give token-level streaming instead of per-message chunks; nice-to-have), `--session-id` (bot-hq deliberately doesn't use it), `--model` flag vs `ANTHROPIC_MODEL` env (v1 needs neither — default model is fine).
 
-**Not verified — check `mlx_whisper --help` before M4:** the exact CLI flag spellings in §6.5 (`--model`, `--output-dir`, `--output-format srt`) and whether it accepts the `.mp4` directly on this install (it should, via ffmpeg — which is confirmed installed). If mlx-whisper misbehaves, the fallback is `brew install whisper-cpp` (+ a ggml model download) with `ffmpeg -i in.mp4 -ar 16000 -ac 1 out.wav` extraction first — same SRT-to-markdown post-processing.
+**mlx-whisper: fully verified 2026-08-15.** All §6.5 flags confirmed against the installed CLI (`--model`, `--output-dir`, `--output-format srt`, `--language`, `--task translate`); it accepts the `.mp4` directly; the whole pipeline was run by hand on `Lecture_2_Intelligent_Agents.mp4`, producing the reference transcript named in §2 (62 min of clean English; the only defect was the trailing-silence repeat loop that §6.5's dedupe rule handles). Fallback if it ever breaks: `brew install whisper-cpp` + ggml model + `ffmpeg -i in.mp4 -ar 16000 -ac 1 out.wav` extraction, same post-processing.
 
 **Deep-dive pointers into bot-hq** (for the builder, if something behaves oddly): spawn flags `src/agents/spawn.rs:1220-1452`; stream parsing `src/agents/events.rs:12-163`; resume capture/replay `src/core/duo.rs:934-950` + `src/core/session.rs:1572`; event schema notes `docs/stream-json-events.md`; permission rationale `src/agents/spawn.rs:1278-1346`. Do **not** copy bot-hq's context-meter, sequencer, or supervisor code — out of scope per §3.
