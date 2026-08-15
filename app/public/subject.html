@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Studyroom</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Studyroom</a>
+    <span class="crumb" id="crumb"></span>
+  </header>
+  <main class="page">
+    <h1 id="title"></h1>
+    <p class="lede">The subject page — file list, previews, chat — arrives in M1.</p>
+  </main>
+  <script>
+    const name = decodeURIComponent(location.pathname.split("/").pop());
+    document.title = `${name} · Studyroom`;
+    document.getElementById("title").textContent = name;
+    document.getElementById("crumb").textContent = name;
+  </script>
+</body>
+</html>

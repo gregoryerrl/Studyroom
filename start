@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Studyroom launcher: install deps once, start the server, open the browser. Ctrl-C stops it.
+set -euo pipefail
+cd "$(dirname "$0")/app"
+URL="http://localhost:4321"
+
+if curl -sf -o /dev/null "$URL/api/subjects"; then
+  echo "Studyroom is already running at $URL"
+  open "$URL"
+  exit 0
+fi
+
+[ -d node_modules ] || npm install --no-audit --no-fund
+
+node server/index.js &
+SERVER=$!
+trap 'kill "$SERVER" 2>/dev/null' EXIT INT TERM
+
+for _ in $(seq 1 50); do
+  curl -sf -o /dev/null "$URL/api/subjects" && break
+  sleep 0.2
+done
+open "$URL"
+wait "$SERVER"
