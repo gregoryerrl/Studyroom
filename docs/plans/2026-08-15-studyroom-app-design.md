@@ -31,22 +31,17 @@ Beyond Q&A, the app is a **digest engine**: its job is to make Gregory *really* 
 | Claude-reads-a-PDF check | **PASSED** 2026-08-15 — quoted AI211 Chapter 1 objectives correctly |
 | Reference transcript | `AI201/_generated/transcripts/Lecture_2_Intelligent_Agents.md` already exists (produced by hand-running §6.5's exact pipeline) — M4's output format must match it |
 | Data dir | `~/Studyroom` (subjects: `AI201`, `AI211`); materials are PDFs (incl. one 400+ page textbook `mml-book.pdf`) plus lecture videos (`.mp4`, hundreds of MB each) |
-| Data-dir git remote | `https://github.com/gregoryerrl/Studyroom.git` — `~/Studyroom` is a git repo tracking this doc (and whatever Gregory chooses to add: materials, `_generated/`). `.studyroom/` state and chat logs are gitignored. |
-| App repo (to create) | `~/Projects/studyroom` |
+| Git remote | `https://github.com/gregoryerrl/Studyroom.git` (private) — `~/Studyroom` is ONE repo holding everything: this doc, the materials, transcripts, `_generated/` artifacts, and the app itself. `.studyroom/` state, chat logs, `node_modules/`, and videos are gitignored. |
+| App location | `~/Studyroom/app/` — built inside this same repo; there is **no** separate app repo |
 | Reference codebase | `~/Projects/bot-hq` (Rust/Tauri; source of all CLI patterns below) |
 
-**Setup prerequisites (M0, before anything else):**
-
-```sh
-# poppler and mlx-whisper were already installed + verified on 2026-08-15 — only this remains:
-mkdir -p ~/Projects/studyroom && cd ~/Projects/studyroom && git init
-```
+**Setup prerequisites: ALL DONE as of 2026-08-15.** poppler and mlx-whisper are installed and verified, the Whisper model is downloaded, and the repo exists and is pushed. There is nothing to install or create before M0 — start building in `app/`.
 
 Verify PDF reading works before building the chat: run `claude -p "Read the first 2 pages of 'CHAPTER 1 Systems of Linear Equations - handouts.pdf' and quote one sentence." --output-format text` from inside `~/Studyroom/AI211`. If it can't read the PDF, stop and fix that first — the whole app depends on it.
 
 ## 3. v1 scope
 
-1. **Dashboard** — subjects auto-discovered from `$STUDYROOM_DIR` (default `~/Studyroom`). A subject is any top-level directory whose name does not start with `.` or `_` and is not `docs`. Show per-subject file count and whether `_generated/` has content.
+1. **Dashboard** — subjects auto-discovered from `$STUDYROOM_DIR`. A subject is any top-level directory whose name does not start with `.` or `_` and is not `docs` or `app`. Show per-subject file count and whether `_generated/` has content.
 2. **Subject page** — file list (materials + `_generated/` in its own section) with in-browser preview: PDFs via `<embed src>` (browser-native viewer), videos via `<video controls>` (Express static serves HTTP Range requests natively, so seeking works with zero extra code), markdown rendered (vendor `marked.min.js` locally, no CDN), text/code as `<pre>`, and `_generated/*.html` visual explainers in a **sandboxed iframe** (`<iframe sandbox src=…>` — CSS and inline SVG render, scripts are blocked; §7.1 forbids Claude from using JS in explainers anyway).
 3. **Chat per subject** — a conversation with Claude grounded in that subject's folder. Streams responses, shows tool activity ("Reading mml-book.pdf…"), survives server restarts (history + session resume are persisted).
 4. **Study actions** — buttons that send canned prompts (§7.2) into the same chat, every one of them tuned by the learner profile (§7.0): **Digest** (the flagship — one button turns a file/topic into a complete study kit: notes + visual explainer + worked examples + flashcards + quiz), *Summarize*, *Quiz me*, *Make flashcards*, *Explain a concept*, *Visual explainer* (a self-contained HTML page with inline SVG diagrams — for visual learning), *Research* (web-grounded, beyond the course materials, saved with source URLs). Outputs saved by Claude into `_generated/`.
@@ -73,10 +68,10 @@ server.js (Express)
    └─ state: ~/Studyroom/.studyroom/  (state.json + chats/<subject>.jsonl)
 ```
 
-Suggested repo layout (keep it this small):
+Suggested layout (keep it this small — everything under `app/` in this repo):
 
 ```
-~/Projects/studyroom/
+~/Studyroom/app/
   server/
     index.js        # express app, routes
     subjects.js     # discovery + file listing
@@ -89,7 +84,7 @@ Suggested repo layout (keep it this small):
 
 ## 5. Data conventions
 
-- `$STUDYROOM_DIR` (env, default `~/Studyroom`) — the data root. The app repo lives elsewhere (`~/Projects/studyroom`).
+- `$STUDYROOM_DIR` (env) — the data root; defaults to **the parent directory of `app/`** (i.e. the repo root), so the repo works wherever it's cloned. The app lives inside the data root at `app/`.
 - `<root>/<Subject>/` — materials, owned by Gregory. **The app and Claude never modify or delete these.**
 - `<root>/<Subject>/_generated/` — Claude's outputs, markdown files named `<type>-<topic>-<YYYY-MM-DD>.md` (e.g. `flashcards-eigenvalues-2026-08-15.md`). Claude creates this dir itself via its Write tool.
 - `<root>/<Subject>/_generated/transcripts/<video-basename>.md` — app-produced (not Claude-produced) lecture transcripts, §6.5. Text, small, and **committed to git** — the durable, searchable form of the un-pushable videos.
@@ -269,8 +264,8 @@ Bind to `127.0.0.1:4321` only. JSONL persistence timing: the user message when t
 
 ## 9. Build plan (execute in order; each milestone is independently verifiable)
 
-**M0 — Scaffold + discovery.** Prereqs from §2 (poppler!, git init). Express server, subject discovery, file listing, static file serve, `.studyroom/` + `chats/` created at boot, bare dashboard page.
-*Accept:* (1) `curl localhost:4321/api/subjects` lists AI201 + AI211 and ignores `docs/`, dotfolders; (2) a PDF opens in the browser via `/files/AI211/...`; (3) **the §2 claude-reads-a-PDF one-liner passes from inside `AI211/`** — this proves poppler before any chat code exists; M0 is not done until it passes.
+**M0 — Scaffold + discovery.** Prereqs are already done (§2). Scaffold everything under `app/`: Express server, subject discovery, file listing, static file serve, `.studyroom/` + `chats/` created at boot, bare dashboard page. Add `node_modules/` to the repo's `.gitignore` if not already there.
+*Accept:* (1) `curl localhost:4321/api/subjects` lists AI201 + AI211 and ignores `docs/`, `app/`, dotfolders; (2) a PDF opens in the browser via `/files/AI211/...`; (3) **the §2 claude-reads-a-PDF one-liner passes from inside `AI211/`** (it passed 2026-08-15 — re-run to confirm nothing drifted); M0 is not done until all three pass.
 
 **M1 — Subject page + previews.** File list UI, PDF embed, video player, markdown rendering, `_generated/` section (empty state fine — and treat a *missing* `_generated/` dir as empty rather than erroring; it doesn't exist until Claude first writes to it).
 *Accept:* can open `mml-book.pdf`, play a lecture `.mp4` with seeking, and view a rendered markdown file from the UI.
@@ -282,17 +277,17 @@ Bind to `127.0.0.1:4321` only. JSONL persistence timing: the user message when t
 **M3 — Study actions + generated artifacts.** §7.0 profile loading, all §7.2 buttons, `_generated/` listing refreshes after a turn completes, HTML explainers render in the sandboxed iframe.
 *Accept:* (1) "Make flashcards on eigenvalues" produces a `Q:/A:` file in `AI211/_generated/` that renders in the file view; (2) the Digest action on AI211 Chapter 7 produces the full kit folder including a `visual.html` that displays diagrams in the iframe; (3) a Research action produces a note with a `## Sources` section of URLs (proves WebSearch works under the §6.1 permission flags); (4) editing `profile.md` visibly changes the style of the next generation.
 
-**M4 — Video transcription.** Prereq: `uv tool install mlx-whisper` (verify flags via `mlx_whisper --help` first). §6.5 in full: Transcribe button + badge, progress stream, SRT→markdown, global single-job lock.
+**M4 — Video transcription.** mlx-whisper is already installed, flags verified, model downloaded (§2, §11) — and a reference transcript from this exact pipeline already exists; match its format. §6.5 in full: Transcribe button + badge, progress stream, SRT→markdown with dedupe, global single-job lock.
 *Accept:* (1) transcribing `AI201/Lecture_2_Intelligent_Agents.mp4` (the shorter one) produces `_generated/transcripts/Lecture_2_Intelligent_Agents.md` with `[HH:MM:SS]` markers; (2) asking the AI201 chat "what did Lecture 2 cover? quote it with timestamps" gets an answer quoting the transcript; (3) starting a second transcription while one runs returns 409.
 
 **M5 (optional polish) — Flashcard renderer.** Parse `Q:/A:` markdown into click-to-reveal cards on the subject page. No scheduling logic.
 
 ## 10. Kicking this off with bot-hq
 
-1. Do §2 prerequisites (poppler, `git init ~/Projects/studyroom`).
-2. Open a bot-hq session with working directory `~/Projects/studyroom`.
-3. First message: *"Read ~/Studyroom/docs/plans/2026-08-15-studyroom-app-design.md and implement M0 exactly as specified. Stop after M0 acceptance checks pass."* Then proceed milestone by milestone.
-4. Copy this doc into the app repo (`docs/DESIGN.md`) at M0 so the project is self-describing. The canonical, evolving copy stays here in the Studyroom repo (`github.com/gregoryerrl/Studyroom`) — commit doc changes there as decisions change.
+1. Prerequisites are all done (§2) — nothing to install or create.
+2. Open a bot-hq session with working directory `~/Studyroom` (this repo).
+3. First message: *"Read docs/plans/2026-08-15-studyroom-app-design.md and implement M0 exactly as specified — build the app inside app/. Stop after M0 acceptance checks pass."* Then proceed milestone by milestone.
+4. This doc lives in the same repo as the code — keep it updated and committed as decisions change during the build.
 
 ## 11. Verified vs. verify-before-relying
 
