@@ -23,7 +23,7 @@ Studyroom is a small local web app that helps Gregory study for university using
 | Node | v22.14.0 (no bun) |
 | Claude CLI | 2.1.233, installed and authenticated |
 | poppler (`pdftoppm`/`pdftotext`) | **MISSING — must install** |
-| Data dir | `~/Studyroom` (subjects: `AI201`, `AI211`; all materials are PDFs, incl. one 400+ page textbook `mml-book.pdf`) |
+| Data dir | `~/Studyroom` (subjects: `AI201`, `AI211`); materials are PDFs (incl. one 400+ page textbook `mml-book.pdf`) plus lecture videos (`.mp4`, hundreds of MB each) |
 | Data-dir git remote | `https://github.com/gregoryerrl/Studyroom.git` — `~/Studyroom` is a git repo tracking this doc (and whatever Gregory chooses to add: materials, `_generated/`). `.studyroom/` state and chat logs are gitignored. |
 | App repo (to create) | `~/Projects/studyroom` |
 | Reference codebase | `~/Projects/bot-hq` (Rust/Tauri; source of all CLI patterns below) |
@@ -40,7 +40,7 @@ Verify PDF reading works before building the chat: run `claude -p "Read the firs
 ## 3. v1 scope
 
 1. **Dashboard** — subjects auto-discovered from `$STUDYROOM_DIR` (default `~/Studyroom`). A subject is any top-level directory whose name does not start with `.` or `_` and is not `docs`. Show per-subject file count and whether `_generated/` has content.
-2. **Subject page** — file list (materials + `_generated/` in its own section) with in-browser preview: PDFs via `<embed src>` (browser-native viewer), markdown rendered (vendor `marked.min.js` locally, no CDN), text/code as `<pre>`.
+2. **Subject page** — file list (materials + `_generated/` in its own section) with in-browser preview: PDFs via `<embed src>` (browser-native viewer), videos via `<video controls>` (Express static serves HTTP Range requests natively, so seeking works with zero extra code), markdown rendered (vendor `marked.min.js` locally, no CDN), text/code as `<pre>`.
 3. **Chat per subject** — a conversation with Claude grounded in that subject's folder. Streams responses, shows tool activity ("Reading mml-book.pdf…"), survives server restarts (history + session resume are persisted).
 4. **Quick actions** — buttons that send a canned prompt into the same chat: *Summarize a file*, *Quiz me*, *Make flashcards*, *Explain a concept*. Outputs saved by Claude into `_generated/`.
 5. **Cancel button** — kills the running turn.
@@ -84,9 +84,9 @@ Suggested repo layout (keep it this small):
 - `$STUDYROOM_DIR` (env, default `~/Studyroom`) — the data root. The app repo lives elsewhere (`~/Projects/studyroom`).
 - `<root>/<Subject>/` — materials, owned by Gregory. **The app and Claude never modify or delete these.**
 - `<root>/<Subject>/_generated/` — Claude's outputs, markdown files named `<type>-<topic>-<YYYY-MM-DD>.md` (e.g. `flashcards-eigenvalues-2026-08-15.md`). Claude creates this dir itself via its Write tool.
-- `<root>/.studyroom/state.json` — `{ "subjects": { "AI211": { "claudeSessionId": "<uuid>" } } }`.
+- `<root>/.studyroom/state.json` — `{ "subjects": { "AI211": { "claudeSessionId": "<uuid>" } } }`. Keep state in memory as the source of truth and persist with an atomic write (temp file + rename); never re-read the file mid-run. Node's single thread plus per-subject keys make parallel turns across subjects safe. Server boot creates `.studyroom/` and `.studyroom/chats/` if missing.
 - `<root>/.studyroom/chats/<Subject>.jsonl` — one JSON object per line: `{ "ts": <ms>, "kind": "user"|"assistant"|"tool_use"|"error", "text"?, "tool"? }`. UI renders history from this file; "New chat" archives it to `<Subject>-<timestamp>.jsonl` and clears the session id.
-- **Git:** `~/Studyroom` is a git repo (remote above). `.gitignore` covers `.DS_Store` and `.studyroom/` (machine state + private chat logs stay local). Committing materials or `_generated/` artifacts is a manual choice by Gregory — the app never runs git, and Claude can't either (Bash is denied, §6.1).
+- **Git:** `~/Studyroom` is a git repo (remote above, private); PDFs and docs are committed. `.gitignore` covers `.DS_Store`, `.studyroom/` (machine state + private chat logs), and **video files** — lecture videos exceed GitHub's 100 MB hard per-file limit and stay local-only (Git LFS is the escape hatch if remote backup is ever needed, but its free tier won't survive a semester of lectures). The app never runs git, and Claude can't either (Bash is denied, §6.1).
 
 ## 6. Claude CLI integration — the core of the app
 
@@ -123,7 +123,7 @@ Rules that came from bot-hq's scar tissue:
 
 - **Always pin `cwd`, never inherit.** An unpinned cwd makes Claude adopt whatever repo/CLAUDE.md it lands in.
 - **Permission posture:** `--dangerously-skip-permissions` disables deny rules entirely, so it can never enforce a tool boundary. `dontAsk` + allowlist + denylist is the only mechanical option, and it fails closed. Studyroom needs Write/Edit (for `_generated/`) but has no reason to grant Bash — so don't.
-- The system prompt goes via `--append-system-prompt-file <path>` (write it to `.studyroom/<subject>-system-prompt.txt` before each spawn). The file form avoids argv-length issues and is what bot-hq uses; the inline `--append-system-prompt` also exists if ever preferred.
+- The system prompt goes via `--append-system-prompt-file <path>` (write it to `<root>/.studyroom/<subject>-system-prompt.txt` — the same `.studyroom/` dir as §5, under the data root, not the app repo — before each spawn). The file form avoids argv-length issues and is what bot-hq uses; the inline `--append-system-prompt` also exists if ever preferred.
 - One turn at a time per subject (in-memory busy flag per subject; return 409 if busy). Turns in *different* subjects may run in parallel — the M4/24GB machine handles several fine.
 
 ### 6.2 Parsing stdout (newline-delimited stream-json)
@@ -172,7 +172,7 @@ The CLI owns conversation state. Per subject: capture `session_id` from the `ini
 
 ### 6.4 Errors, retry, cancel
 
-- **Failure:** `result.is_error || result.api_error_status != null`. Transient HTTP statuses worth ONE automatic retry (2s delay): `408 425 429 500 502 503 504 529`. Everything else (400/401/403/404/413/422) is permanent — surface it in the chat as an error bubble.
+- **Failure:** `result.is_error || result.api_error_status != null`. Transient HTTP statuses worth ONE automatic retry (2s delay): `408 425 429 500 502 503 504 529`. A retry is a fresh spawn with identical argv — but re-read the stored session id first, since an `init` event may have landed before the failure. If the retry also fails, treat it as permanent. Everything else (400/401/403/404/413/422) is permanent immediately — surface it in the chat as an error bubble.
 - **Cancel:** `process.kill(-child.pid, "SIGKILL")` — negative pid kills the whole process group (this is why `detached: true`). Then release the busy flag. Context already accumulated is safe: the next message just `--resume`s. Also cancel when the browser aborts the streaming request (`req.on("close", …)`).
 - **No wall-clock timeout on turns** — Claude legitimately spends minutes on "summarize chapter 7". The Cancel button is the timeout. (One-shot utility spawns, if any are added, should get hard 60s timeouts.)
 - **Exit without `result` event** (crash): treat as error, release the busy flag, keep whatever text already streamed.
@@ -195,6 +195,8 @@ Rules:
 - Quiz format: numbered questions, then an "## Answers" section at the end.
 - Keep explanations at the level of a student preparing for exams: worked examples
   over abstract prose.
+- You cannot open video files (.mp4). If asked about a lecture video, say so and
+  answer from the PDFs and notes instead.
 ```
 
 `<SUBJECT_NAME>` is the folder name; if a syllabus PDF exists, mention it: "The file <name> is the course syllabus."
@@ -216,23 +218,23 @@ The quiz flow deliberately stays inside the chat (Claude grades follow-up answer
 | `/api/subjects/:s/files` | GET | `{ materials: [...], generated: [...] }` (name, size, mtime) |
 | `/files/:s/*` | GET | raw file serve for previews (path-traversal-safe: resolve + verify inside subject dir) |
 | `/api/subjects/:s/chat` | GET | chat history (parsed JSONL) |
-| `/api/subjects/:s/chat` | POST | body `{ message }`; responds `text/event-stream`-style chunked stream of `{kind:"text"|"tool_use"|"done"|"error", ...}` JSON lines; browser reads it via `fetch` + `ReadableStream` (POST can't use EventSource). Client abort = cancel. 409 if subject busy. |
-| `/api/subjects/:s/chat/reset` | POST | archive JSONL, clear session id |
+| `/api/subjects/:s/chat` | POST | body `{ message }`; responds with plain **NDJSON** (`Content-Type: application/x-ndjson`): one JSON object per line, `{kind:"text"|"tool_use"|"done"|"error", ...}`. This is NOT SSE — no `data:` prefixes, no blank-line framing; the client splits on `\n`. Browser reads it via `fetch` + `ReadableStream` (POST can't use EventSource). Client abort = cancel. 409 if subject busy. |
+| `/api/subjects/:s/chat/reset` | POST | archive JSONL, clear session id; 409 if subject busy (same flag as chat) |
 | `/api/subjects/:s/cancel` | POST | kill the running turn's process group |
 
-Bind to `127.0.0.1:4321` only. Persist the user message to JSONL when the POST arrives and the assistant message (concatenated text) when `result` lands — history must survive a mid-turn crash with at least the user side intact.
+Bind to `127.0.0.1:4321` only. JSONL persistence timing: the user message when the POST arrives; `tool_use` lines as they stream; at `result`, one assistant line with all text blocks concatenated in arrival order. History must survive a mid-turn crash with at least the user side intact.
 
 ## 9. Build plan (execute in order; each milestone is independently verifiable)
 
-**M0 — Scaffold + discovery.** Prereqs from §2 (poppler!, git init). Express server, subject discovery, file listing, static file serve, bare dashboard page.
-*Accept:* `curl localhost:4321/api/subjects` lists AI201 + AI211 and ignores `docs/`, dotfolders; a PDF opens in the browser via `/files/AI211/...`.
+**M0 — Scaffold + discovery.** Prereqs from §2 (poppler!, git init). Express server, subject discovery, file listing, static file serve, `.studyroom/` + `chats/` created at boot, bare dashboard page.
+*Accept:* (1) `curl localhost:4321/api/subjects` lists AI201 + AI211 and ignores `docs/`, dotfolders; (2) a PDF opens in the browser via `/files/AI211/...`; (3) **the §2 claude-reads-a-PDF one-liner passes from inside `AI211/`** — this proves poppler before any chat code exists; M0 is not done until it passes.
 
-**M1 — Subject page + previews.** File list UI, PDF embed, markdown rendering, `_generated/` section (empty state fine).
-*Accept:* can open `mml-book.pdf` and a rendered markdown file from the UI.
+**M1 — Subject page + previews.** File list UI, PDF embed, video player, markdown rendering, `_generated/` section (empty state fine — and treat a *missing* `_generated/` dir as empty rather than erroring; it doesn't exist until Claude first writes to it).
+*Accept:* can open `mml-book.pdf`, play a lecture `.mp4` with seeking, and view a rendered markdown file from the UI.
 
 **M2 — Chat.** §6 in full: spawn, stream to browser, session persistence, resume, cancel, error bubbles, JSONL history.
 *Accept:* (1) ask "what files do you have?" → Claude lists the actual PDFs; (2) ask a follow-up referencing the first answer, **restart the server between the two messages** → Claude still has context (proves `--resume` path); (3) ask it to quote from a PDF page (proves poppler); (4) Cancel mid-turn leaves the app responsive and the next message works.
-*If claude errors immediately:* run the same command by hand in a terminal (print the exact spawned argv in server logs at debug level) — flag typos and permission-mode issues show up instantly there.
+*If claude errors immediately:* run the same command by hand in a terminal (print the exact spawned argv in server logs at debug level) — flag typos and permission-mode issues show up instantly there. *If the resume check (2) fails:* confirm `state.json` actually holds a uuid after the first turn and that the logged argv of the second turn contains `--resume <that uuid>`.
 
 **M3 — Quick actions + generated artifacts.** §7.2 buttons, `_generated/` listing refreshes after a turn completes.
 *Accept:* "Make flashcards on eigenvalues" produces a `Q:/A:` file in `AI211/_generated/` that renders in the file view.

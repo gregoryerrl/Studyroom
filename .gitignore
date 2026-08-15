@@ -1,2 +1,9 @@
 .DS_Store
 .studyroom/
+
+# Lecture videos exceed GitHub's 100 MB per-file hard limit — kept local-only.
+# (Git LFS could hold them, but its 1 GB free tier won't fit a semester of lectures.)
+*.mp4
+*.mov
+*.mkv
+*.webm
