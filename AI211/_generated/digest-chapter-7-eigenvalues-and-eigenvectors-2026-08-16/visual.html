@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chapter 7 — Eigenvalues and Eigenvectors — Visual Explainer</title>
+<style>
+  :root{
+    --ink:#1a1a1a; --paper:#faf9f7; --card:#ffffff; --rule:#e4e1dc;
+    --blue:#1d4ed8; --blue-l:#dbeafe;
+    --orange:#c2410c; --orange-l:#ffedd5;
+    --green:#15803d; --green-l:#dcfce7;
+    --red:#b91c1c; --red-l:#fee2e2;
+    --slate:#475569; --slate-l:#f1f5f9;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0 auto; max-width:1240px; padding:28px 22px 80px;
+    background:var(--paper); color:var(--ink); line-height:1.5;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  h1{font-size:1.65rem; margin:0 0 6px; letter-spacing:-.01em}
+  .sub{color:var(--slate); font-size:.9rem; margin:0 0 26px}
+  section{
+    background:var(--card); border:1px solid var(--rule); border-radius:12px;
+    padding:20px 22px 24px; margin-bottom:26px;
+  }
+  h2{
+    font-size:.82rem; text-transform:uppercase; letter-spacing:.09em;
+    color:var(--slate); margin:0 0 4px; padding-left:11px; border-left:4px solid var(--blue);
+  }
+  .cite{font-size:.76rem; color:#8a8578; margin:0 0 16px; padding-left:15px}
+  svg{display:block; width:100%; height:auto; max-width:100%}
+  .legend{display:flex; flex-wrap:wrap; gap:8px; margin:0}
+  .chip{
+    display:inline-flex; align-items:center; gap:7px; font-size:.8rem;
+    border:1px solid var(--rule); border-radius:999px; padding:5px 13px 5px 9px; background:#fff;
+  }
+  .dot{width:11px; height:11px; border-radius:50%; flex:none}
+  .note{
+    font-size:.85rem; color:var(--slate); margin:14px 0 0; padding:11px 14px;
+    background:var(--slate-l); border-left:3px solid var(--slate); border-radius:0 6px 6px 0;
+  }
+  .note.warn{background:var(--red-l); border-left-color:var(--red); color:#7f1d1d}
+  .note.good{background:var(--green-l); border-left-color:var(--green); color:#14532d}
+  table{border-collapse:collapse; width:100%; font-size:.85rem; margin-top:6px}
+  th,td{border:1px solid var(--rule); padding:7px 10px; text-align:left; vertical-align:top}
+  th{background:var(--slate-l); font-weight:600}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.9em}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="aSlate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker>
+  <marker id="aBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#1d4ed8"/></marker>
+  <marker id="aOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#c2410c"/></marker>
+  <marker id="aGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#15803d"/></marker>
+  <marker id="aRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#b91c1c"/></marker>
+</defs></svg>
+
+<h1>Chapter 7 — Eigenvalues and Eigenvectors</h1>
+<p class="sub">Visual explainer · source: <strong>Chapter 7 Eigenvalues And Eigenvectors - handouts.pdf</strong> · citations are <code>p.N&nbsp;→&nbsp;slide&nbsp;S</code></p>
+
+<section>
+  <h2>Colour key</h2>
+  <p class="cite">One colour per role, used consistently in every diagram below.</p>
+  <div class="legend">
+    <span class="chip"><span class="dot" style="background:#1d4ed8"></span>λ — eigenvalue / scalar</span>
+    <span class="chip"><span class="dot" style="background:#c2410c"></span><strong>x</strong> — eigenvector / direction</span>
+    <span class="chip"><span class="dot" style="background:#15803d"></span>guarantee — theorem that always holds</span>
+    <span class="chip"><span class="dot" style="background:#b91c1c"></span>trap — where students lose marks</span>
+    <span class="chip"><span class="dot" style="background:#475569"></span>procedure / structure</span>
+  </div>
+</section>
+
+<section>
+  <h2>1 · Concept map — how the whole chapter hangs together</h2>
+  <p class="cite">Left lane: any square matrix. Right lane: the special case A = Aᵀ. Everything grows from one equation.</p>
+<svg viewBox="0 0 1200 830" role="img" aria-label="Concept map of Chapter 7">
+  <rect x="380" y="14" width="440" height="58" rx="9" fill="#fff" stroke="#1a1a1a" stroke-width="2.5"/>
+  <text x="600" y="40" text-anchor="middle" font-size="21" font-weight="700">A x = λ x ,   x ≠ 0</text>
+  <text x="600" y="60" text-anchor="middle" font-size="12" fill="#475569">the seed of the entire chapter · p.3 → slide 5</text>
+
+  <path d="M600,72 L600,92 L330,92 L330,140" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#aSlate)"/>
+  <path d="M600,72 L600,92 L950,92 L950,140" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#aGreen)"/>
+
+  <rect x="215" y="140" width="470" height="30" rx="6" fill="#f1f5f9" stroke="#475569"/>
+  <text x="450" y="160" text-anchor="middle" font-size="13" font-weight="700" fill="#475569">§7.1 – §7.2   ·   ANY square matrix</text>
+  <rect x="720" y="140" width="460" height="30" rx="6" fill="#dcfce7" stroke="#15803d"/>
+  <text x="950" y="160" text-anchor="middle" font-size="13" font-weight="700" fill="#15803d">§7.3   ·   when A = Aᵀ (symmetric)</text>
+
+  <g font-size="13">
+    <rect x="215" y="190" width="470" height="46" rx="7" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6"/>
+    <text x="450" y="209" text-anchor="middle" font-weight="700" fill="#1d4ed8">det(λI − A) = 0</text>
+    <text x="450" y="227" text-anchor="middle" font-size="11.5" fill="#1d4ed8">characteristic equation · degree n · p.8 → slide 15</text>
+
+    <rect x="215" y="262" width="470" height="42" rx="7" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6"/>
+    <text x="450" y="280" text-anchor="middle" font-weight="700" fill="#1d4ed8">eigenvalues = the REAL ROOTS</text>
+    <text x="450" y="296" text-anchor="middle" font-size="11.5" fill="#1d4ed8">λ₁, λ₂, …  (0 is allowed; complex roots are discarded)</text>
+
+    <rect x="215" y="330" width="470" height="42" rx="7" fill="#ffedd5" stroke="#c2410c" stroke-width="1.6"/>
+    <text x="450" y="348" text-anchor="middle" font-weight="700" fill="#c2410c">for each λᵢ solve (λᵢI − A)x = 0</text>
+    <text x="450" y="364" text-anchor="middle" font-size="11.5" fill="#c2410c">row reduce · RREF must contain a zero row · p.8 → slide 16</text>
+
+    <rect x="215" y="398" width="470" height="42" rx="7" fill="#ffedd5" stroke="#c2410c" stroke-width="1.6"/>
+    <text x="450" y="416" text-anchor="middle" font-weight="700" fill="#c2410c">eigenvectors → EIGENSPACE</text>
+    <text x="450" y="432" text-anchor="middle" font-size="11.5" fill="#c2410c">Thm 7.1 · = null space of (λI − A) · 0 adjoined by hand</text>
+
+    <rect x="215" y="466" width="470" height="42" rx="7" fill="#f1f5f9" stroke="#475569" stroke-width="1.6"/>
+    <text x="450" y="484" text-anchor="middle" font-weight="700" fill="#475569">count LINEARLY INDEPENDENT eigenvectors</text>
+    <text x="450" y="500" text-anchor="middle" font-size="11.5" fill="#475569">this single number decides everything that follows</text>
+
+    <rect x="215" y="534" width="470" height="34" rx="7" fill="#fff" stroke="#1a1a1a" stroke-width="2"/>
+    <text x="450" y="556" text-anchor="middle" font-size="14" font-weight="700">Thm 7.5 · is the count = n ?  ⟺</text>
+
+    <rect x="215" y="600" width="222" height="52" rx="7" fill="#dcfce7" stroke="#15803d" stroke-width="1.6"/>
+    <text x="326" y="619" text-anchor="middle" font-weight="700" fill="#15803d">YES → diagonalizable</text>
+    <text x="326" y="637" text-anchor="middle" font-size="12" fill="#15803d">P = [p₁ … pₙ] ,  P⁻¹AP = D</text>
+
+    <rect x="463" y="600" width="222" height="52" rx="7" fill="#fee2e2" stroke="#b91c1c" stroke-width="1.6"/>
+    <text x="574" y="619" text-anchor="middle" font-weight="700" fill="#b91c1c">NO → not diagonalizable</text>
+    <text x="574" y="637" text-anchor="middle" font-size="12" fill="#b91c1c">e.g. (λ−2)³ gives only 2 &lt; 3</text>
+  </g>
+
+  <path d="M450,236 L450,258" fill="none" stroke="#475569" stroke-width="1.8" marker-end="url(#aSlate)"/>
+  <path d="M450,304 L450,326" fill="none" stroke="#475569" stroke-width="1.8" marker-end="url(#aSlate)"/>
+  <path d="M450,372 L450,394" fill="none" stroke="#475569" stroke-width="1.8" marker-end="url(#aSlate)"/>
+  <path d="M450,440 L450,462" fill="none" stroke="#475569" stroke-width="1.8" marker-end="url(#aSlate)"/>
+  <path d="M450,508 L450,530" fill="none" stroke="#475569" stroke-width="1.8" marker-end="url(#aSlate)"/>
+  <path d="M340,568 L326,568 L326,596" fill="none" stroke="#15803d" stroke-width="1.8" marker-end="url(#aGreen)"/>
+  <path d="M560,568 L574,568 L574,596" fill="none" stroke="#b91c1c" stroke-width="1.8" marker-end="url(#aRed)"/>
+
+  <g font-size="11.5">
+    <rect x="14" y="256" width="182" height="54" rx="7" fill="#fff" stroke="#1d4ed8" stroke-dasharray="4 3"/>
+    <text x="105" y="274" text-anchor="middle" font-weight="700" fill="#1d4ed8">Thm 7.3 shortcut</text>
+    <text x="105" y="290" text-anchor="middle" fill="#1d4ed8">A triangular ⇒ eigenvalues</text>
+    <text x="105" y="303" text-anchor="middle" fill="#1d4ed8">= main diagonal entries</text>
+    <path d="M196,283 L211,283" fill="none" stroke="#1d4ed8" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#aBlue)"/>
+
+    <rect x="14" y="326" width="182" height="54" rx="7" fill="#fff" stroke="#1d4ed8" stroke-dasharray="4 3"/>
+    <text x="105" y="344" text-anchor="middle" font-weight="700" fill="#1d4ed8">Thm 7.4 shortcut</text>
+    <text x="105" y="360" text-anchor="middle" fill="#1d4ed8">A ~ B ⇒ same eigenvalues</text>
+    <text x="105" y="373" text-anchor="middle" fill="#1d4ed8">(eigenvectors differ!)</text>
+    <path d="M196,340 L206,340 L206,283" fill="none" stroke="#1d4ed8" stroke-width="1.6" stroke-dasharray="4 3"/>
+
+    <rect x="14" y="530" width="182" height="66" rx="7" fill="#fff" stroke="#b91c1c" stroke-dasharray="4 3"/>
+    <text x="105" y="548" text-anchor="middle" font-weight="700" fill="#b91c1c">Thm 7.6 shortcut</text>
+    <text x="105" y="564" text-anchor="middle" fill="#b91c1c">n DISTINCT λ ⇒ diagonalizable</text>
+    <text x="105" y="578" text-anchor="middle" fill="#b91c1c" font-weight="700">sufficient, NOT necessary</text>
+    <text x="105" y="591" text-anchor="middle" fill="#b91c1c">arrow does not reverse</text>
+    <path d="M196,563 L206,563 L206,626 L211,626" fill="none" stroke="#b91c1c" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#aRed)"/>
+  </g>
+
+  <g font-size="13">
+    <rect x="720" y="190" width="460" height="80" rx="7" fill="#dcfce7" stroke="#15803d" stroke-width="1.6"/>
+    <text x="950" y="209" text-anchor="middle" font-weight="700" fill="#15803d">Thm 7.7 · three guarantees, free of charge</text>
+    <text x="738" y="228" font-size="12" fill="#15803d">1 · A is ALWAYS diagonalizable — no counting needed</text>
+    <text x="738" y="245" font-size="12" fill="#15803d">2 · every eigenvalue is REAL</text>
+    <text x="738" y="262" font-size="12" fill="#15803d">3 · dim(eigenspace) = multiplicity — the gap cannot open</text>
+
+    <rect x="720" y="296" width="460" height="52" rx="7" fill="#dcfce7" stroke="#15803d" stroke-width="1.6"/>
+    <text x="950" y="315" text-anchor="middle" font-weight="700" fill="#15803d">Thm 7.9 · distinct λ ⇒ eigenvectors ORTHOGONAL</text>
+    <text x="950" y="333" text-anchor="middle" font-size="12" fill="#15803d">perpendicularity across eigenspaces is free</text>
+
+    <rect x="720" y="374" width="460" height="52" rx="7" fill="#ffedd5" stroke="#c2410c" stroke-width="1.6"/>
+    <text x="950" y="393" text-anchor="middle" font-weight="700" fill="#c2410c">NORMALIZE every eigenvector</text>
+    <text x="950" y="411" text-anchor="middle" font-size="12" fill="#c2410c">+ GRAM-SCHMIDT inside any eigenspace of multiplicity k ≥ 2</text>
+
+    <rect x="720" y="452" width="460" height="52" rx="7" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6"/>
+    <text x="950" y="471" text-anchor="middle" font-weight="700" fill="#1d4ed8">Thm 7.8 · columns orthonormal ⟺ P orthogonal</text>
+    <text x="950" y="489" text-anchor="middle" font-size="12" fill="#1d4ed8">orthonormal, not merely orthogonal</text>
+
+    <rect x="720" y="530" width="460" height="52" rx="7" fill="#fff" stroke="#15803d" stroke-width="2.4"/>
+    <text x="950" y="549" text-anchor="middle" font-weight="700" fill="#15803d">Thm 7.10 · Fundamental Theorem</text>
+    <text x="950" y="567" text-anchor="middle" font-size="12" fill="#15803d">orthogonally diagonalizable ⟺ A symmetric</text>
+
+    <rect x="720" y="600" width="460" height="52" rx="7" fill="#dcfce7" stroke="#15803d" stroke-width="2.4"/>
+    <text x="950" y="620" text-anchor="middle" font-size="15" font-weight="700" fill="#15803d">PᵀAP = D</text>
+    <text x="950" y="639" text-anchor="middle" font-size="12" fill="#15803d">the inverse is FREE, because P⁻¹ = Pᵀ</text>
+  </g>
+
+  <path d="M950,270 L950,292" fill="none" stroke="#15803d" stroke-width="1.8" marker-end="url(#aGreen)"/>
+  <path d="M950,348 L950,370" fill="none" stroke="#15803d" stroke-width="1.8" marker-end="url(#aGreen)"/>
+  <path d="M950,426 L950,448" fill="none" stroke="#15803d" stroke-width="1.8" marker-end="url(#aGreen)"/>
+  <path d="M950,504 L950,526" fill="none" stroke="#15803d" stroke-width="1.8" marker-end="url(#aGreen)"/>
+  <path d="M950,582 L950,596" fill="none" stroke="#15803d" stroke-width="1.8" marker-end="url(#aGreen)"/>
+
+  <path d="M685,487 L702,487 L702,216 L716,216" fill="none" stroke="#15803d" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#aGreen)"/>
+  <text x="700" y="700" text-anchor="middle" font-size="11.5" fill="#15803d">symmetry bypasses the count entirely</text>
+
+  <rect x="215" y="700" width="965" height="52" rx="7" fill="#f1f5f9" stroke="#475569" stroke-dasharray="5 4"/>
+  <text x="697" y="720" text-anchor="middle" font-size="13" font-weight="700" fill="#475569">§7.4 APPLICATIONS — objectives only in this deck (p.38 → slide 75)</text>
+  <text x="697" y="740" text-anchor="middle" font-size="11.5" fill="#475569">population growth · first-order linear differential equations · quadratic forms + Principal Axes Theorem · constrained optimization</text>
+
+  <path d="M450,652 L450,676 L697,676 L697,696" fill="none" stroke="#475569" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#aSlate)"/>
+  <path d="M950,652 L950,676 L697,676" fill="none" stroke="#475569" stroke-width="1.6" stroke-dasharray="5 4"/>
+
+  <text x="600" y="790" text-anchor="middle" font-size="12.5" fill="#475569" font-style="italic">One procedure, progressively strengthened by progressively stronger hypotheses on A.</text>
+</svg>
+  <p class="note">Read the two lanes as the <strong>same procedure at two strengths</strong>. The left lane must
+  stop and <em>count</em>; the right lane never does, because Theorem 7.7 has already done the counting for you.</p>
+</section>
+
+<section>
+  <h2>2 · Mechanism — what A x = λ x actually says</h2>
+  <p class="cite">p.3 → slide 5. An eigenvector is a direction the matrix cannot rotate off its own line.</p>
+<svg viewBox="0 0 980 360" role="img" aria-label="Eigenvector versus non-eigenvector">
+  <rect x="8" y="8" width="470" height="344" rx="9" fill="#fff" stroke="#c2410c" stroke-width="1.6"/>
+  <text x="243" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#c2410c">EIGENVECTOR — stays on its own line</text>
+
+  <line x1="60" y1="300" x2="440" y2="300" stroke="#cbd5e1" stroke-width="1.5"/>
+  <line x1="140" y1="60" x2="140" y2="330" stroke="#cbd5e1" stroke-width="1.5"/>
+  <line x1="60" y1="348" x2="420" y2="60" stroke="#c2410c" stroke-width="1.2" stroke-dasharray="6 5" opacity=".55"/>
+  <text x="378" y="80" font-size="11" fill="#c2410c" opacity=".85">the line spanned by x</text>
+
+  <line x1="140" y1="300" x2="240" y2="220" stroke="#c2410c" stroke-width="4" marker-end="url(#aOrange)"/>
+  <text x="196" y="252" font-size="15" font-weight="700" fill="#c2410c">x</text>
+  <line x1="140" y1="300" x2="320" y2="156" stroke="#1d4ed8" stroke-width="2.4" marker-end="url(#aBlue)"/>
+  <text x="300" y="196" font-size="14" font-weight="700" fill="#1d4ed8">A x</text>
+  <text x="150" y="120" font-size="13" fill="#1d4ed8">A x = λ x   with λ = 1.8</text>
+  <text x="150" y="138" font-size="11.5" fill="#475569">same line · length scaled · direction preserved</text>
+  <circle cx="140" cy="300" r="4" fill="#1a1a1a"/>
+
+  <rect x="502" y="8" width="470" height="344" rx="9" fill="#fff" stroke="#b91c1c" stroke-width="1.6"/>
+  <text x="737" y="34" text-anchor="middle" font-size="14" font-weight="700" fill="#b91c1c">NOT AN EIGENVECTOR — knocked off its line</text>
+
+  <line x1="554" y1="300" x2="934" y2="300" stroke="#cbd5e1" stroke-width="1.5"/>
+  <line x1="634" y1="60" x2="634" y2="330" stroke="#cbd5e1" stroke-width="1.5"/>
+  <line x1="554" y1="348" x2="914" y2="60" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="6 5" opacity=".55"/>
+  <text x="872" y="80" font-size="11" fill="#64748b" opacity=".9">the line spanned by y</text>
+
+  <line x1="634" y1="300" x2="734" y2="220" stroke="#475569" stroke-width="4" marker-end="url(#aSlate)"/>
+  <text x="690" y="252" font-size="15" font-weight="700" fill="#475569">y</text>
+  <line x1="634" y1="300" x2="700" y2="130" stroke="#b91c1c" stroke-width="2.4" marker-end="url(#aRed)"/>
+  <text x="704" y="150" font-size="14" font-weight="700" fill="#b91c1c">A y</text>
+  <path d="M718,196 Q742,178 742,158" fill="none" stroke="#b91c1c" stroke-width="1.4" stroke-dasharray="3 3"/>
+  <text x="644" y="120" font-size="13" fill="#b91c1c">A y ≠ λ y  for every λ</text>
+  <text x="644" y="138" font-size="11.5" fill="#475569">left the dashed line ⇒ no scalar can fix it</text>
+  <circle cx="634" cy="300" r="4" fill="#1a1a1a"/>
+</svg>
+  <p class="note warn"><strong>Why “nonzero” is load-bearing.</strong> A·<strong>0</strong> = λ·<strong>0</strong> holds for
+  <em>every</em> λ. Permit <strong>x</strong> = <strong>0</strong> and every scalar becomes an eigenvalue of every matrix —
+  the definition would say nothing. Note the mirror-image fact: <strong>λ = 0 is perfectly legal</strong> (it means A is singular).
+  The scalar may vanish; the vector may not.</p>
+</section>
+
+<section>
+  <h2>3 · Mechanism — reading eigenvalues straight off the geometry</h2>
+  <p class="cite">Example 3, pp.6–7 → slides 11–13. A = [[−1,0],[0,1]] reflects vectors in the y-axis.</p>
+<svg viewBox="0 0 980 340" role="img" aria-label="Reflection in the y-axis and its eigenspaces">
+  <line x1="60" y1="190" x2="560" y2="190" stroke="#94a3b8" stroke-width="1.6"/>
+  <line x1="310" y1="30" x2="310" y2="320" stroke="#94a3b8" stroke-width="1.6"/>
+  <text x="566" y="195" font-size="12" fill="#64748b">x</text>
+  <text x="316" y="28" font-size="12" fill="#64748b">y</text>
+
+  <line x1="240" y1="190" x2="310" y2="190" stroke="#c2410c" stroke-width="9" opacity=".22"/>
+  <line x1="310" y1="190" x2="380" y2="190" stroke="#c2410c" stroke-width="9" opacity=".22"/>
+  <line x1="310" y1="120" x2="310" y2="190" stroke="#15803d" stroke-width="9" opacity=".22"/>
+
+  <line x1="310" y1="190" x2="430" y2="190" stroke="#c2410c" stroke-width="3.4" marker-end="url(#aOrange)"/>
+  <text x="392" y="212" font-size="12" font-weight="700" fill="#c2410c">(x, 0)</text>
+  <line x1="310" y1="190" x2="190" y2="190" stroke="#c2410c" stroke-width="3.4" stroke-dasharray="6 4" marker-end="url(#aOrange)"/>
+  <text x="196" y="212" font-size="12" font-weight="700" fill="#c2410c">(−x, 0)</text>
+  <path d="M424,172 Q368,140 196,172" fill="none" stroke="#c2410c" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#aOrange)"/>
+  <text x="300" y="146" text-anchor="middle" font-size="12" font-weight="700" fill="#c2410c">flipped ⇒ λ₁ = −1</text>
+
+  <line x1="310" y1="190" x2="310" y2="80" stroke="#15803d" stroke-width="3.4" marker-end="url(#aGreen)"/>
+  <text x="322" y="76" font-size="12" font-weight="700" fill="#15803d">(0, y) ↦ (0, y)</text>
+  <text x="322" y="94" font-size="12" font-weight="700" fill="#15803d">fixed ⇒ λ₂ = +1</text>
+
+  <line x1="310" y1="190" x2="430" y2="100" stroke="#475569" stroke-width="2.6" marker-end="url(#aSlate)"/>
+  <text x="436" y="98" font-size="12" fill="#475569">(x, y)</text>
+  <line x1="310" y1="190" x2="190" y2="100" stroke="#b91c1c" stroke-width="2.6" stroke-dasharray="5 4" marker-end="url(#aRed)"/>
+  <text x="128" y="98" font-size="12" fill="#b91c1c">(−x, y)</text>
+  <line x1="310" y1="190" x2="160" y2="302" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="5 4"/>
+  <text x="196" y="292" font-size="11" fill="#b91c1c">not on its own line ⇒ NOT an eigenvector</text>
+
+  <rect x="600" y="40" width="366" height="250" rx="8" fill="#faf9f7" stroke="#e4e1dc"/>
+  <text x="620" y="68" font-size="13" font-weight="700" fill="#1a1a1a">The question to ask — every time</text>
+  <text x="620" y="92" font-size="12.5" fill="#475569">“Which vectors land back on their OWN line?”</text>
+  <line x1="620" y1="106" x2="946" y2="106" stroke="#e4e1dc"/>
+  <text x="620" y="130" font-size="12.5" fill="#c2410c">on the x-axis:  (x,0) ↦ (−x,0) = −1·v</text>
+  <text x="620" y="152" font-size="12.5" fill="#15803d">on the y-axis:  (0,y) ↦ ( 0,y) = +1·v</text>
+  <text x="620" y="174" font-size="12.5" fill="#b91c1c">anywhere else:  knocked off its line</text>
+  <line x1="620" y1="190" x2="946" y2="190" stroke="#e4e1dc"/>
+  <text x="620" y="214" font-size="12.5" font-weight="700" fill="#1a1a1a">eigenspace(−1) = the x-axis</text>
+  <text x="620" y="236" font-size="12.5" font-weight="700" fill="#1a1a1a">eigenspace(+1) = the y-axis</text>
+  <text x="620" y="266" font-size="11.5" fill="#475569" font-style="italic">No determinant was computed at any point.</text>
+</svg>
+  <p class="note good"><strong>Transferable rule for any reflection.</strong> The <em>mirror line is fixed</em> (λ = +1);
+  the axis <em>perpendicular to the mirror</em> is flipped (λ = −1). Recognise the transformation before reaching for algebra.</p>
+</section>
+
+<section>
+  <h2>4 · Mechanism — the computation pipeline</h2>
+  <p class="cite">p.8 → slides 15–16. Three steps, with a built-in error detector at the end.</p>
+<svg viewBox="0 0 1120 300" role="img" aria-label="Three-step pipeline for finding eigenvalues and eigenvectors">
+  <rect x="16" y="60" width="250" height="96" rx="9" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.8"/>
+  <circle cx="46" cy="86" r="14" fill="#1d4ed8"/><text x="46" y="91" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">1</text>
+  <text x="70" y="91" font-size="14" font-weight="700" fill="#1d4ed8">Form the equation</text>
+  <text x="36" y="120" font-size="16" font-weight="700" fill="#1d4ed8">| λI − A | = 0</text>
+  <text x="36" y="141" font-size="11.5" fill="#1d4ed8">a polynomial of degree n in λ</text>
+
+  <rect x="300" y="60" width="250" height="96" rx="9" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.8"/>
+  <circle cx="330" cy="86" r="14" fill="#1d4ed8"/><text x="330" y="91" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">2</text>
+  <text x="354" y="91" font-size="14" font-weight="700" fill="#1d4ed8">Take the REAL roots</text>
+  <text x="320" y="120" font-size="14" font-weight="700" fill="#1d4ed8">λ₁ , λ₂ , … , λₙ</text>
+  <text x="320" y="141" font-size="11.5" fill="#1d4ed8">these ARE the eigenvalues</text>
+
+  <rect x="584" y="60" width="250" height="96" rx="9" fill="#ffedd5" stroke="#c2410c" stroke-width="1.8"/>
+  <circle cx="614" cy="86" r="14" fill="#c2410c"/><text x="614" y="91" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">3</text>
+  <text x="638" y="91" font-size="14" font-weight="700" fill="#c2410c">Solve, one λ at a time</text>
+  <text x="604" y="120" font-size="15" font-weight="700" fill="#c2410c">(λᵢI − A) x = 0</text>
+  <text x="604" y="141" font-size="11.5" fill="#c2410c">row reduce · free variables → basis</text>
+
+  <rect x="868" y="60" width="236" height="96" rx="9" fill="#ffedd5" stroke="#c2410c" stroke-width="1.8"/>
+  <text x="986" y="91" text-anchor="middle" font-size="14" font-weight="700" fill="#c2410c">EIGENSPACE of λᵢ</text>
+  <text x="986" y="116" text-anchor="middle" font-size="12" fill="#c2410c">basis + dimension</text>
+  <text x="986" y="137" text-anchor="middle" font-size="11.5" fill="#c2410c">Thm 7.1 · null space of (λᵢI − A)</text>
+
+  <path d="M266,108 L296,108" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#aSlate)"/>
+  <path d="M550,108 L580,108" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#aSlate)"/>
+  <path d="M834,108 L864,108" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#aSlate)"/>
+
+  <rect x="440" y="196" width="540" height="82" rx="9" fill="#fee2e2" stroke="#b91c1c" stroke-width="1.8"/>
+  <text x="710" y="222" text-anchor="middle" font-size="13.5" font-weight="700" fill="#b91c1c">BUILT-IN ERROR DETECTOR (slide 16)</text>
+  <text x="710" y="244" text-anchor="middle" font-size="12.5" fill="#b91c1c">the RREF of (λᵢI − A) must contain AT LEAST ONE ROW OF ZEROS</text>
+  <text x="710" y="264" text-anchor="middle" font-size="12" fill="#b91c1c">reduces to I  ⇒  only x = 0  ⇒  λᵢ is not a root, or the algebra slipped. Stop and recheck.</text>
+  <path d="M700,160 L700,192" fill="none" stroke="#b91c1c" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#aRed)"/>
+
+  <text x="140" y="212" font-size="12" fill="#475569">λ = 0 is a legal root</text>
+  <text x="140" y="230" font-size="12" fill="#475569">complex roots are discarded</text>
+  <text x="140" y="248" font-size="12" fill="#475569">(they cannot happen if A = Aᵀ)</text>
+  <path d="M120,200 L104,200 L104,164" fill="none" stroke="#475569" stroke-width="1.4" stroke-dasharray="4 3"/>
+</svg>
+</section>
+
+<section>
+  <h2>5 · Mechanism — the multiplicity gap (the chapter’s pivotal contrast)</h2>
+  <p class="cite">Left: Example 5, pp.9–10 → slides 17–19. Right: Example 8, p.13 → slides 25–26. Same n, same “repeated eigenvalue”, opposite verdicts.</p>
+<svg viewBox="0 0 1080 440" role="img" aria-label="Two 3x3 matrices with repeated eigenvalues, one diagonalizable and one not">
+  <rect x="8" y="8" width="520" height="424" rx="10" fill="#fff" stroke="#b91c1c" stroke-width="1.8"/>
+  <rect x="8" y="8" width="520" height="34" rx="10" fill="#fee2e2"/>
+  <text x="268" y="31" text-anchor="middle" font-size="13.5" font-weight="700" fill="#b91c1c">A = [[2,1,0],[0,2,0],[0,0,2]]   —   the GAP opens</text>
+
+  <text x="30" y="72" font-size="12.5" font-weight="700" fill="#475569">characteristic polynomial</text>
+  <rect x="30" y="82" width="476" height="34" rx="6" fill="#dbeafe" stroke="#1d4ed8"/>
+  <text x="268" y="105" text-anchor="middle" font-size="15" font-weight="700" fill="#1d4ed8">( λ − 2 )³        ⇒   λ = 2 ,  multiplicity 3</text>
+
+  <text x="30" y="146" font-size="12.5" font-weight="700" fill="#475569">solve (2I − A)x = 0</text>
+  <rect x="30" y="156" width="476" height="76" rx="6" fill="#faf9f7" stroke="#e4e1dc"/>
+  <text x="46" y="178" font-size="12.5" font-family="monospace" fill="#1a1a1a">2I − A = [ 0 −1  0 ]     one equation:  −x₂ = 0</text>
+  <text x="46" y="197" font-size="12.5" font-family="monospace" fill="#1a1a1a">         [ 0  0  0 ]     x₁ = s free ,  x₃ = t free</text>
+  <text x="46" y="216" font-size="12.5" font-family="monospace" fill="#1a1a1a">         [ 0  0  0 ]     x = s(1,0,0) + t(0,0,1)</text>
+
+  <text x="30" y="262" font-size="12.5" font-weight="700" fill="#475569">the count</text>
+  <rect x="30" y="272" width="226" height="58" rx="6" fill="#dbeafe" stroke="#1d4ed8"/>
+  <text x="143" y="294" text-anchor="middle" font-size="12" fill="#1d4ed8">algebraic multiplicity</text>
+  <text x="143" y="318" text-anchor="middle" font-size="22" font-weight="700" fill="#1d4ed8">3</text>
+  <rect x="280" y="272" width="226" height="58" rx="6" fill="#ffedd5" stroke="#c2410c"/>
+  <text x="393" y="294" text-anchor="middle" font-size="12" fill="#c2410c">independent eigenvectors</text>
+  <text x="393" y="318" text-anchor="middle" font-size="22" font-weight="700" fill="#c2410c">2</text>
+  <path d="M256,301 L276,301" fill="none" stroke="#b91c1c" stroke-width="2.4" marker-end="url(#aRed)"/>
+  <text x="268" y="352" text-anchor="middle" font-size="13" font-weight="700" fill="#b91c1c">2 &lt; 3   ←  THE GAP</text>
+
+  <rect x="30" y="368" width="476" height="50" rx="7" fill="#fee2e2" stroke="#b91c1c" stroke-width="1.8"/>
+  <text x="268" y="389" text-anchor="middle" font-size="13.5" font-weight="700" fill="#b91c1c">total = 2 &lt; n = 3   ⇒   NOT diagonalizable</text>
+  <text x="268" y="408" text-anchor="middle" font-size="11.5" fill="#b91c1c">by the “only if” half of Thm 7.5</text>
+
+  <rect x="552" y="8" width="520" height="424" rx="10" fill="#fff" stroke="#15803d" stroke-width="1.8"/>
+  <rect x="552" y="8" width="520" height="34" rx="10" fill="#dcfce7"/>
+  <text x="812" y="31" text-anchor="middle" font-size="13.5" font-weight="700" fill="#15803d">A = [[1,3,0],[3,1,0],[0,0,−2]]   —   NO gap</text>
+
+  <text x="574" y="72" font-size="12.5" font-weight="700" fill="#475569">characteristic polynomial</text>
+  <rect x="574" y="82" width="476" height="34" rx="6" fill="#dbeafe" stroke="#1d4ed8"/>
+  <text x="812" y="105" text-anchor="middle" font-size="15" font-weight="700" fill="#1d4ed8">( λ − 4 )( λ + 2 )²    ⇒   λ = −2 ,  multiplicity 2</text>
+
+  <text x="574" y="146" font-size="12.5" font-weight="700" fill="#475569">bases for the eigenspaces</text>
+  <rect x="574" y="156" width="476" height="76" rx="6" fill="#faf9f7" stroke="#e4e1dc"/>
+  <text x="590" y="178" font-size="12.5" font-family="monospace" fill="#1a1a1a">λ = 4  :  B₁ = { (1, 1, 0) }              dim 1</text>
+  <text x="590" y="197" font-size="12.5" font-family="monospace" fill="#1a1a1a">λ = −2 :  B₂ = { (1,−1,0), (0,0,1) }      dim 2</text>
+  <text x="590" y="220" font-size="11.5" fill="#475569">A(1,1,0) = (4,4,0) = 4·(1,1,0)  ✓    A(0,0,1) = (0,0,−2) = −2·(0,0,1)  ✓</text>
+
+  <text x="574" y="262" font-size="12.5" font-weight="700" fill="#475569">the count</text>
+  <rect x="574" y="272" width="226" height="58" rx="6" fill="#dbeafe" stroke="#1d4ed8"/>
+  <text x="687" y="294" text-anchor="middle" font-size="12" fill="#1d4ed8">multiplicity of λ = −2</text>
+  <text x="687" y="318" text-anchor="middle" font-size="22" font-weight="700" fill="#1d4ed8">2</text>
+  <rect x="824" y="272" width="226" height="58" rx="6" fill="#ffedd5" stroke="#c2410c"/>
+  <text x="937" y="294" text-anchor="middle" font-size="12" fill="#c2410c">independent eigenvectors</text>
+  <text x="937" y="318" text-anchor="middle" font-size="22" font-weight="700" fill="#c2410c">2</text>
+  <path d="M800,301 L820,301" fill="none" stroke="#15803d" stroke-width="2.4" marker-end="url(#aGreen)"/>
+  <text x="812" y="352" text-anchor="middle" font-size="13" font-weight="700" fill="#15803d">2 = 2   ←  NO GAP</text>
+
+  <rect x="574" y="368" width="476" height="50" rx="7" fill="#dcfce7" stroke="#15803d" stroke-width="1.8"/>
+  <text x="812" y="389" text-anchor="middle" font-size="13.5" font-weight="700" fill="#15803d">total = 1 + 2 = 3 = n   ⇒   DIAGONALIZABLE</text>
+  <text x="812" y="408" text-anchor="middle" font-size="11.5" fill="#15803d">by the “if” half of Thm 7.5 — although λ repeats</text>
+</svg>
+  <p class="note warn"><strong>The #1 exam trap lives here.</strong> Both matrices are 3 × 3 with a repeated eigenvalue,
+  and they land on opposite verdicts. So “repeated eigenvalue” is never an answer — it is an <em>instruction</em>:
+  go and count the linearly independent eigenvectors. Theorem 7.6 (n distinct ⇒ diagonalizable) is
+  <strong>sufficient, not necessary</strong>; only Theorem 7.5 settles the question in both directions.</p>
+</section>
+
+<section>
+  <h2>6 · Mechanism — how P and D are wired together</h2>
+  <p class="cite">Steps for diagonalizing, pp.18–19 → slides 36–37. Worked on Example 4, pp.19–20 → slides 38–40.</p>
+<svg viewBox="0 0 1080 400" role="img" aria-label="Columns of P pair with diagonal entries of D">
+  <text x="60" y="38" font-size="13" font-weight="700" fill="#475569">eigenvector / eigenvalue pairs found by row reduction</text>
+
+  <rect x="60" y="54" width="290" height="34" rx="6" fill="#ffedd5" stroke="#c2410c"/>
+  <text x="78" y="76" font-size="13" font-family="monospace" fill="#c2410c">p₁ = (−1,  0,  1)</text>
+  <text x="256" y="76" font-size="13" font-family="monospace" font-weight="700" fill="#1d4ed8">λ₁ =  2</text>
+
+  <rect x="60" y="96" width="290" height="34" rx="6" fill="#ffedd5" stroke="#c2410c"/>
+  <text x="78" y="118" font-size="13" font-family="monospace" fill="#c2410c">p₂ = ( 1, −1,  4)</text>
+  <text x="256" y="118" font-size="13" font-family="monospace" font-weight="700" fill="#1d4ed8">λ₂ = −2</text>
+
+  <rect x="60" y="138" width="290" height="34" rx="6" fill="#ffedd5" stroke="#c2410c"/>
+  <text x="78" y="160" font-size="13" font-family="monospace" fill="#c2410c">p₃ = (−1,  1,  1)</text>
+  <text x="256" y="160" font-size="13" font-family="monospace" font-weight="700" fill="#1d4ed8">λ₃ =  3</text>
+
+  <text x="430" y="38" font-size="13" font-weight="700" fill="#475569">P — eigenvectors as COLUMNS</text>
+  <rect x="430" y="54" width="230" height="118" rx="7" fill="#fff" stroke="#1a1a1a" stroke-width="2"/>
+  <rect x="440" y="62" width="66" height="102" rx="4" fill="#ffedd5" stroke="#c2410c" stroke-width="1.6"/>
+  <rect x="512" y="62" width="66" height="102" rx="4" fill="#ffedd5" stroke="#c2410c" stroke-width="1.6" opacity=".72"/>
+  <rect x="584" y="62" width="66" height="102" rx="4" fill="#ffedd5" stroke="#c2410c" stroke-width="1.6" opacity=".48"/>
+  <g font-size="14" font-family="monospace" text-anchor="middle" fill="#1a1a1a">
+    <text x="473" y="92">−1</text><text x="545" y="92">1</text><text x="617" y="92">−1</text>
+    <text x="473" y="122">0</text><text x="545" y="122">−1</text><text x="617" y="122">1</text>
+    <text x="473" y="152">1</text><text x="545" y="152">4</text><text x="617" y="152">1</text>
+  </g>
+  <text x="473" y="186" text-anchor="middle" font-size="11.5" font-weight="700" fill="#c2410c">col 1 = p₁</text>
+  <text x="545" y="186" text-anchor="middle" font-size="11.5" font-weight="700" fill="#c2410c">col 2 = p₂</text>
+  <text x="617" y="186" text-anchor="middle" font-size="11.5" font-weight="700" fill="#c2410c">col 3 = p₃</text>
+
+  <text x="770" y="38" font-size="13" font-weight="700" fill="#475569">D = P⁻¹AP — eigenvalues on the DIAGONAL</text>
+  <rect x="790" y="54" width="230" height="118" rx="7" fill="#fff" stroke="#1a1a1a" stroke-width="2"/>
+  <rect x="800" y="62" width="66" height="32" rx="4" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6"/>
+  <rect x="872" y="97" width="66" height="32" rx="4" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6" opacity=".72"/>
+  <rect x="944" y="132" width="66" height="32" rx="4" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6" opacity=".48"/>
+  <g font-size="14" font-family="monospace" text-anchor="middle" fill="#1a1a1a">
+    <text x="833" y="85">2</text><text x="905" y="85">0</text><text x="977" y="85">0</text>
+    <text x="833" y="120">0</text><text x="905" y="120">−2</text><text x="977" y="120">0</text>
+    <text x="833" y="155">0</text><text x="905" y="155">0</text><text x="977" y="155">3</text>
+  </g>
+  <text x="905" y="186" text-anchor="middle" font-size="11.5" font-weight="700" fill="#1d4ed8">entry (i,i) ← the λ of column i</text>
+
+  <path d="M350,71 L400,71 L400,64 L426,64" fill="none" stroke="#c2410c" stroke-width="1.8" marker-end="url(#aOrange)"/>
+  <path d="M350,113 L400,113 L426,113" fill="none" stroke="#c2410c" stroke-width="1.8" marker-end="url(#aOrange)"/>
+  <path d="M350,155 L400,155 L400,162 L426,162" fill="none" stroke="#c2410c" stroke-width="1.8" marker-end="url(#aOrange)"/>
+
+  <path d="M473,206 Q473,236 833,236 Q833,214 833,100" fill="none" stroke="#1d4ed8" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#aBlue)"/>
+  <path d="M545,206 Q545,254 905,254 Q905,230 905,135" fill="none" stroke="#1d4ed8" stroke-width="1.8" stroke-dasharray="5 4" opacity=".72" marker-end="url(#aBlue)"/>
+  <path d="M617,206 Q617,272 977,272 Q977,250 977,170" fill="none" stroke="#1d4ed8" stroke-width="1.8" stroke-dasharray="5 4" opacity=".5" marker-end="url(#aBlue)"/>
+
+  <rect x="60" y="300" width="960" height="82" rx="9" fill="#fee2e2" stroke="#b91c1c" stroke-width="1.8"/>
+  <text x="540" y="326" text-anchor="middle" font-size="13.5" font-weight="700" fill="#b91c1c">ORDERING RULE (slide 37)</text>
+  <text x="540" y="348" text-anchor="middle" font-size="12.5" fill="#b91c1c">Column i of P must pair with entry (i,i) of D. Swap two columns of P and the diagonal entries of D swap too.</text>
+  <text x="540" y="368" text-anchor="middle" font-size="12" fill="#b91c1c">Order P as p₃, p₂, p₁ and D becomes diag(3, −2, 2). Neither order is “more correct” — but P and D must agree.</text>
+</svg>
+  <p class="note">P must be <strong>invertible</strong>, and a square matrix is invertible exactly when its columns are
+  <strong>linearly independent</strong>. That single equivalence is what turns “is A diagonalizable?” into
+  “can I find n independent eigenvectors?” — i.e. into Theorem 7.5.</p>
+</section>
+
+<section>
+  <h2>7 · Decision tree — what to do when handed a square matrix</h2>
+  <p class="cite">Follow the branches; each terminal box names the theorem that justifies the verdict.</p>
+<svg viewBox="0 0 1100 620" role="img" aria-label="Decision tree for eigenvalue problems">
+  <rect x="430" y="10" width="240" height="42" rx="8" fill="#fff" stroke="#1a1a1a" stroke-width="2"/>
+  <text x="550" y="36" text-anchor="middle" font-size="14" font-weight="700">given a square matrix A</text>
+  <path d="M550,52 L550,74" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#aSlate)"/>
+
+  <rect x="410" y="76" width="280" height="42" rx="8" fill="#f1f5f9" stroke="#475569" stroke-width="1.8"/>
+  <text x="550" y="102" text-anchor="middle" font-size="13.5" font-weight="700" fill="#475569">is A triangular or diagonal?</text>
+
+  <path d="M410,97 L300,97 L300,140" fill="none" stroke="#1d4ed8" stroke-width="1.8" marker-end="url(#aBlue)"/>
+  <text x="336" y="90" font-size="12" font-weight="700" fill="#1d4ed8">YES</text>
+  <rect x="150" y="142" width="300" height="46" rx="7" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6"/>
+  <text x="300" y="162" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1d4ed8">Thm 7.3 · eigenvalues = diagonal entries</text>
+  <text x="300" y="180" text-anchor="middle" font-size="11.5" fill="#1d4ed8">no determinant expansion needed</text>
+
+  <path d="M690,97 L800,97 L800,140" fill="none" stroke="#475569" stroke-width="1.8" marker-end="url(#aSlate)"/>
+  <text x="752" y="90" font-size="12" font-weight="700" fill="#475569">NO</text>
+  <rect x="650" y="142" width="300" height="46" rx="7" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.6"/>
+  <text x="800" y="162" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1d4ed8">expand | λI − A | = 0</text>
+  <text x="800" y="180" text-anchor="middle" font-size="11.5" fill="#1d4ed8">take the real roots</text>
+
+  <path d="M300,188 L300,212 L550,212 L550,236" fill="none" stroke="#475569" stroke-width="1.8"/>
+  <path d="M800,188 L800,212 L550,212" fill="none" stroke="#475569" stroke-width="1.8"/>
+  <path d="M550,212 L550,236" fill="none" stroke="#475569" stroke-width="1.8" marker-end="url(#aSlate)"/>
+
+  <rect x="400" y="238" width="300" height="42" rx="8" fill="#f1f5f9" stroke="#475569" stroke-width="1.8"/>
+  <text x="550" y="264" text-anchor="middle" font-size="13.5" font-weight="700" fill="#475569">is A symmetric ( A = Aᵀ ) ?</text>
+
+  <path d="M700,259 L860,259 L860,300" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#aGreen)"/>
+  <text x="778" y="252" font-size="12" font-weight="700" fill="#15803d">YES</text>
+  <rect x="700" y="302" width="380" height="128" rx="8" fill="#dcfce7" stroke="#15803d" stroke-width="1.8"/>
+  <text x="890" y="324" text-anchor="middle" font-size="13" font-weight="700" fill="#15803d">STOP COUNTING — Thm 7.7 guarantees it</text>
+  <text x="716" y="346" font-size="12" fill="#15803d">· diagonalizable, always</text>
+  <text x="716" y="364" font-size="12" fill="#15803d">· all eigenvalues real</text>
+  <text x="716" y="382" font-size="12" fill="#15803d">· dim(eigenspace) = multiplicity, always</text>
+  <text x="716" y="406" font-size="12" fill="#15803d">Want an orthogonal P? → normalize; Gram-Schmidt</text>
+  <text x="716" y="422" font-size="12" fill="#15803d">inside repeated eigenspaces (slides 67–68).</text>
+
+  <path d="M400,259 L240,259 L240,300" fill="none" stroke="#475569" stroke-width="2" marker-end="url(#aSlate)"/>
+  <text x="300" y="252" font-size="12" font-weight="700" fill="#475569">NO</text>
+  <rect x="60" y="302" width="360" height="42" rx="8" fill="#f1f5f9" stroke="#475569" stroke-width="1.8"/>
+  <text x="240" y="328" text-anchor="middle" font-size="13" font-weight="700" fill="#475569">are the n eigenvalues all DISTINCT?</text>
+
+  <path d="M420,323 L470,323 L470,366" fill="none" stroke="#15803d" stroke-width="1.8" marker-end="url(#aGreen)"/>
+  <text x="446" y="316" font-size="11.5" font-weight="700" fill="#15803d">YES</text>
+  <rect x="330" y="368" width="290" height="44" rx="7" fill="#dcfce7" stroke="#15803d" stroke-width="1.6"/>
+  <text x="475" y="388" text-anchor="middle" font-size="12.5" font-weight="700" fill="#15803d">Thm 7.6 ⇒ diagonalizable</text>
+  <text x="475" y="405" text-anchor="middle" font-size="11.5" fill="#15803d">done — but you still need eigenvectors to build P</text>
+
+  <path d="M240,344 L240,366" fill="none" stroke="#b91c1c" stroke-width="1.8" marker-end="url(#aRed)"/>
+  <text x="176" y="360" font-size="11.5" font-weight="700" fill="#b91c1c">NO (repeats)</text>
+  <rect x="60" y="368" width="250" height="60" rx="7" fill="#fee2e2" stroke="#b91c1c" stroke-width="1.8"/>
+  <text x="185" y="389" text-anchor="middle" font-size="12.5" font-weight="700" fill="#b91c1c">CONCLUDE NOTHING YET</text>
+  <text x="185" y="407" text-anchor="middle" font-size="11.5" fill="#b91c1c">row reduce each (λI − A);</text>
+  <text x="185" y="421" text-anchor="middle" font-size="11.5" fill="#b91c1c">count the free variables</text>
+
+  <path d="M185,428 L185,460" fill="none" stroke="#475569" stroke-width="1.8" marker-end="url(#aSlate)"/>
+  <rect x="60" y="462" width="250" height="38" rx="7" fill="#fff" stroke="#1a1a1a" stroke-width="1.8"/>
+  <text x="185" y="486" text-anchor="middle" font-size="13" font-weight="700">Thm 7.5 · is the total = n ?</text>
+
+  <path d="M110,500 L110,530" fill="none" stroke="#15803d" stroke-width="1.8" marker-end="url(#aGreen)"/>
+  <rect x="30" y="532" width="160" height="46" rx="7" fill="#dcfce7" stroke="#15803d" stroke-width="1.6"/>
+  <text x="110" y="552" text-anchor="middle" font-size="12" font-weight="700" fill="#15803d">= n ⇒ diagonalizable</text>
+  <text x="110" y="569" text-anchor="middle" font-size="11" fill="#15803d">build P⁻¹AP = D</text>
+
+  <path d="M260,500 L260,530" fill="none" stroke="#b91c1c" stroke-width="1.8" marker-end="url(#aRed)"/>
+  <rect x="200" y="532" width="180" height="46" rx="7" fill="#fee2e2" stroke="#b91c1c" stroke-width="1.6"/>
+  <text x="290" y="552" text-anchor="middle" font-size="12" font-weight="700" fill="#b91c1c">&lt; n ⇒ NOT diagonalizable</text>
+  <text x="290" y="569" text-anchor="middle" font-size="11" fill="#b91c1c">the only test that proves a negative</text>
+
+  <path d="M890,430 L890,530" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#aGreen)"/>
+  <rect x="700" y="532" width="380" height="46" rx="7" fill="#dcfce7" stroke="#15803d" stroke-width="2.2"/>
+  <text x="890" y="552" text-anchor="middle" font-size="13.5" font-weight="700" fill="#15803d">Thm 7.10 · PᵀAP = D , with P orthogonal</text>
+  <text x="890" y="570" text-anchor="middle" font-size="11.5" fill="#15803d">and this route exists ONLY for symmetric A</text>
+</svg>
+</section>
+
+<section>
+  <h2>8 · Mechanism — the mirrored pair: pathologies vs guarantees</h2>
+  <p class="cite">Non-symmetric failures, pp.26–27 → slides 52–53. Theorem 7.7, p.27 → slide 54. Each row is an exact negation of the other.</p>
+<svg viewBox="0 0 1080 340" role="img" aria-label="Non-symmetric pathologies mirrored against Theorem 7.7 guarantees">
+  <rect x="8" y="8" width="510" height="46" rx="8" fill="#fee2e2" stroke="#b91c1c" stroke-width="1.8"/>
+  <text x="263" y="30" text-anchor="middle" font-size="14" font-weight="700" fill="#b91c1c">NON-SYMMETRIC — three things that can go wrong</text>
+  <text x="263" y="47" text-anchor="middle" font-size="11.5" fill="#b91c1c">slides 52–53</text>
+
+  <rect x="562" y="8" width="510" height="46" rx="8" fill="#dcfce7" stroke="#15803d" stroke-width="1.8"/>
+  <text x="817" y="30" text-anchor="middle" font-size="14" font-weight="700" fill="#15803d">SYMMETRIC (A = Aᵀ) — Theorem 7.7 forbids all three</text>
+  <text x="817" y="47" text-anchor="middle" font-size="11.5" fill="#15803d">slide 54</text>
+
+  <rect x="8" y="70" width="510" height="72" rx="8" fill="#fff" stroke="#b91c1c" stroke-width="1.4"/>
+  <circle cx="42" cy="106" r="15" fill="#b91c1c"/><text x="42" y="111" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">1</text>
+  <text x="70" y="100" font-size="13" font-weight="700" fill="#b91c1c">may NOT be diagonalizable</text>
+  <text x="70" y="122" font-size="11.5" fill="#475569">e.g. [[2,1,0],[0,2,0],[0,0,2]] — only 2 eigenvectors for n = 3</text>
+
+  <rect x="562" y="70" width="510" height="72" rx="8" fill="#fff" stroke="#15803d" stroke-width="1.4"/>
+  <circle cx="596" cy="106" r="15" fill="#15803d"/><text x="596" y="111" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">1</text>
+  <text x="624" y="100" font-size="13" font-weight="700" fill="#15803d">IS diagonalizable — always</text>
+  <text x="624" y="122" font-size="11.5" fill="#475569">no counting required; it is guaranteed before you start</text>
+
+  <rect x="8" y="152" width="510" height="72" rx="8" fill="#fff" stroke="#b91c1c" stroke-width="1.4"/>
+  <circle cx="42" cy="188" r="15" fill="#b91c1c"/><text x="42" y="193" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">2</text>
+  <text x="70" y="182" font-size="13" font-weight="700" fill="#b91c1c">eigenvalues may NOT be real</text>
+  <text x="70" y="204" font-size="11.5" fill="#475569">the procedure says “take the REAL roots” — some may be discarded</text>
+
+  <rect x="562" y="152" width="510" height="72" rx="8" fill="#fff" stroke="#15803d" stroke-width="1.4"/>
+  <circle cx="596" cy="188" r="15" fill="#15803d"/><text x="596" y="193" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">2</text>
+  <text x="624" y="182" font-size="13" font-weight="700" fill="#15803d">ALL eigenvalues are real</text>
+  <text x="624" y="204" font-size="11.5" fill="#475569">nothing is ever lost when you keep only the real roots</text>
+
+  <rect x="8" y="234" width="510" height="92" rx="8" fill="#fff" stroke="#b91c1c" stroke-width="1.4"/>
+  <circle cx="42" cy="280" r="15" fill="#b91c1c"/><text x="42" y="285" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">3</text>
+  <text x="70" y="266" font-size="13" font-weight="700" fill="#b91c1c">#eigenvectors &lt; multiplicity</text>
+  <text x="70" y="288" font-size="11.5" fill="#475569">the GAP of diagram 5 — multiplicity 3 delivering only dimension 2</text>
+  <text x="70" y="310" font-size="11.5" fill="#b91c1c" font-weight="700">this is the root cause of failure 1</text>
+
+  <rect x="562" y="234" width="510" height="92" rx="8" fill="#fff" stroke="#15803d" stroke-width="1.4"/>
+  <circle cx="596" cy="280" r="15" fill="#15803d"/><text x="596" y="285" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">3</text>
+  <text x="624" y="266" font-size="13" font-weight="700" fill="#15803d">dim(eigenspace) = multiplicity k</text>
+  <text x="624" y="288" font-size="11.5" fill="#475569">λ of multiplicity k has exactly k independent eigenvectors</text>
+  <text x="624" y="310" font-size="11.5" fill="#15803d" font-weight="700">the strong one — it is WHY guarantee 1 holds</text>
+
+  <g stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="5 4">
+    <path d="M518,106 L558,106" marker-start="url(#aSlate)" marker-end="url(#aSlate)"/>
+    <path d="M518,188 L558,188" marker-start="url(#aSlate)" marker-end="url(#aSlate)"/>
+    <path d="M518,280 L558,280" marker-start="url(#aSlate)" marker-end="url(#aSlate)"/>
+  </g>
+</svg>
+  <p class="note good">Learn the two columns as a <strong>mirrored pair</strong>, never as two separate lists.
+  If you can state either side, you can reconstruct the other by negating it row by row.</p>
+</section>
+
+<section>
+  <h2>9 · Mechanism — orthogonal diagonalization, and where Gram-Schmidt enters</h2>
+  <p class="cite">Procedure p.34 → slides 67–68. Worked on Example 8, pp.35–36 → slides 69–72.</p>
+<svg viewBox="0 0 1100 470" role="img" aria-label="Orthogonal diagonalization procedure">
+  <rect x="380" y="10" width="330" height="46" rx="8" fill="#fff" stroke="#15803d" stroke-width="2.4"/>
+  <text x="545" y="31" text-anchor="middle" font-size="13.5" font-weight="700" fill="#15803d">STEP 0 · check A = Aᵀ first</text>
+  <text x="545" y="49" text-anchor="middle" font-size="11.5" fill="#15803d">Thm 7.10 — if not symmetric, no orthogonal P exists at all</text>
+  <path d="M545,56 L545,80" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#aGreen)"/>
+
+  <rect x="380" y="82" width="330" height="46" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.8"/>
+  <text x="545" y="103" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1d4ed8">STEP 1 · all eigenvalues + their MULTIPLICITIES</text>
+  <text x="545" y="120" text-anchor="middle" font-size="11.5" fill="#1d4ed8">the multiplicity decides which branch you take next</text>
+
+  <path d="M440,128 L280,128 L280,168" fill="none" stroke="#c2410c" stroke-width="1.8" marker-end="url(#aOrange)"/>
+  <text x="300" y="150" font-size="11.5" font-weight="700" fill="#c2410c">multiplicity 1</text>
+  <path d="M650,128 L820,128 L820,168" fill="none" stroke="#b91c1c" stroke-width="1.8" marker-end="url(#aRed)"/>
+  <text x="838" y="150" font-size="11.5" font-weight="700" fill="#b91c1c">multiplicity k ≥ 2</text>
+
+  <rect x="100" y="170" width="360" height="86" rx="8" fill="#ffedd5" stroke="#c2410c" stroke-width="1.8"/>
+  <text x="280" y="192" text-anchor="middle" font-size="13" font-weight="700" fill="#c2410c">STEP 2 · find one eigenvector, NORMALIZE it</text>
+  <text x="120" y="214" font-size="11.5" fill="#c2410c">divide by its length — that is the only extra work</text>
+  <text x="120" y="232" font-size="11.5" fill="#c2410c">versus ordinary §7.2 diagonalization</text>
+  <text x="120" y="250" font-size="11.5" font-weight="700" fill="#15803d">no Gram-Schmidt — Thm 7.9 already gives orthogonality</text>
+
+  <rect x="640" y="170" width="400" height="86" rx="8" fill="#fee2e2" stroke="#b91c1c" stroke-width="1.8"/>
+  <text x="840" y="192" text-anchor="middle" font-size="13" font-weight="700" fill="#b91c1c">STEP 3 · find k independent eigenvectors</text>
+  <text x="660" y="214" font-size="11.5" fill="#b91c1c">Thm 7.7.3 guarantees k of them exist</text>
+  <text x="660" y="232" font-size="11.5" font-weight="700" fill="#b91c1c">if that set is not orthonormal → GRAM-SCHMIDT</text>
+  <text x="660" y="250" font-size="11.5" fill="#b91c1c">independent ≠ perpendicular — this is the only failure point</text>
+
+  <path d="M280,256 L280,286 L545,286 L545,310" fill="none" stroke="#475569" stroke-width="1.8"/>
+  <path d="M840,256 L840,286 L545,286" fill="none" stroke="#475569" stroke-width="1.8"/>
+  <path d="M545,286 L545,310" fill="none" stroke="#475569" stroke-width="1.8" marker-end="url(#aSlate)"/>
+
+  <rect x="290" y="312" width="510" height="60" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.8"/>
+  <text x="545" y="334" text-anchor="middle" font-size="13" font-weight="700" fill="#1d4ed8">STEP 4 · orthonormal set of n eigenvectors → COLUMNS of P</text>
+  <text x="545" y="356" text-anchor="middle" font-size="11.5" fill="#1d4ed8">Thm 7.8: orthonormal columns ⟺ P orthogonal ⟺ P⁻¹ = Pᵀ</text>
+  <path d="M545,372 L545,396" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#aGreen)"/>
+
+  <rect x="290" y="398" width="510" height="58" rx="8" fill="#dcfce7" stroke="#15803d" stroke-width="2.4"/>
+  <text x="545" y="422" text-anchor="middle" font-size="16" font-weight="700" fill="#15803d">P⁻¹AP  =  PᵀAP  =  D</text>
+  <text x="545" y="443" text-anchor="middle" font-size="11.5" fill="#15803d">eigenvalues on the diagonal · the inverse never has to be computed</text>
+
+  <rect x="20" y="300" width="250" height="156" rx="8" fill="#faf9f7" stroke="#e4e1dc"/>
+  <text x="38" y="322" font-size="12" font-weight="700" fill="#475569">Example 8 · A = [[−2,2],[2,1]]</text>
+  <text x="38" y="344" font-size="11.5" font-family="monospace" fill="#1a1a1a">(λ+3)(λ−2) → λ = −3, 2</text>
+  <text x="38" y="363" font-size="11.5" font-family="monospace" fill="#1a1a1a">(−2,1)  and  (1,2)</text>
+  <text x="38" y="382" font-size="11.5" fill="#15803d">⊥ free: (−2)(1)+(1)(2) = 0</text>
+  <text x="38" y="401" font-size="11.5" font-family="monospace" fill="#1a1a1a">‖·‖ = √5 → normalize</text>
+  <text x="38" y="420" font-size="11.5" font-family="monospace" fill="#c2410c">p₁ = (−2/√5, 1/√5)</text>
+  <text x="38" y="437" font-size="11.5" font-family="monospace" fill="#c2410c">p₂ = ( 1/√5, 2/√5)</text>
+  <text x="38" y="452" font-size="11.5" font-weight="700" fill="#15803d">PᵀAP = diag(−3, 2)  ✓</text>
+
+  <rect x="820" y="300" width="260" height="156" rx="8" fill="#faf9f7" stroke="#e4e1dc"/>
+  <text x="838" y="322" font-size="12" font-weight="700" fill="#475569">Why Gram-Schmidt only in step 3</text>
+  <text x="838" y="346" font-size="11.5" fill="#15803d">ACROSS eigenspaces:</text>
+  <text x="838" y="363" font-size="11.5" fill="#15803d">Thm 7.9 makes them ⊥ for free</text>
+  <text x="838" y="388" font-size="11.5" fill="#b91c1c">WITHIN one eigenspace:</text>
+  <text x="838" y="405" font-size="11.5" fill="#b91c1c">you may have picked a skew</text>
+  <text x="838" y="422" font-size="11.5" fill="#b91c1c">basis — independent, but not</text>
+  <text x="838" y="439" font-size="11.5" fill="#b91c1c">perpendicular. Fix it there.</text>
+</svg>
+</section>
+
+<section>
+  <h2>10 · Theorem index</h2>
+  <p class="cite">Every theorem shown in the deck, with the page and slide it appears on. (Theorem 7.2 is not included in this handout.)</p>
+  <table>
+    <tr><th style="width:52px">#</th><th>Name</th><th>Statement</th><th style="width:120px">Strength</th><th style="width:104px">Location</th></tr>
+    <tr><td><strong>7.1</strong></td><td>Eigenvectors of λ Form a Subspace</td><td>eigenvectors of λ, together with <strong>0</strong>, form a subspace = the eigenspace</td><td>definition-maker</td><td>p.5 → slide 10</td></tr>
+    <tr><td><strong>7.3</strong></td><td>Eigenvalues of Triangular Matrices</td><td>A triangular ⇒ eigenvalues are the main-diagonal entries</td><td>shortcut</td><td>p.10 → slide 20</td></tr>
+    <tr><td><strong>7.4</strong></td><td>Similar Matrices Have the Same Eigenvalues</td><td>A ~ B ⇒ same eigenvalues (eigenvectors <em>differ</em>)</td><td>one-way</td><td>p.16 → slide 32</td></tr>
+    <tr><td><strong>7.5</strong></td><td>Condition for Diagonalization</td><td>diagonalizable <strong>⟺</strong> n linearly independent eigenvectors</td><td><strong>⟺ definitive</strong></td><td>p.18 → slide 35</td></tr>
+    <tr><td><strong>7.6</strong></td><td>Sufficient Condition for Diagonalization</td><td>n <strong>distinct</strong> eigenvalues ⇒ diagonalizable</td><td style="color:#b91c1c"><strong>sufficient only</strong></td><td>p.21 → slide 41</td></tr>
+    <tr><td><strong>7.7</strong></td><td>Properties of Symmetric Matrices</td><td>diagonalizable · eigenvalues real · dim(eigenspace) = multiplicity</td><td style="color:#15803d"><strong>guarantee ×3</strong></td><td>p.27 → slide 54</td></tr>
+    <tr><td><strong>7.8</strong></td><td>Property of Orthogonal Matrices</td><td>P orthogonal <strong>⟺</strong> columns form an <em>orthonormal</em> set</td><td>⟺</td><td>p.29 → slide 58</td></tr>
+    <tr><td><strong>7.9</strong></td><td>Property of Symmetric Matrices</td><td>symmetric + distinct λ ⇒ eigenvectors orthogonal</td><td style="color:#15803d">free orthogonality</td><td>p.31 → slide 62</td></tr>
+    <tr><td><strong>7.10</strong></td><td>Fundamental Theorem of Symmetric Matrices</td><td>orthogonally diagonalizable <strong>⟺</strong> A symmetric</td><td><strong>⟺ the ceiling</strong></td><td>p.33 → slide 66</td></tr>
+  </table>
+  <p class="note">§7.4 (population growth · first-order linear differential equations · quadratic forms and the
+  Principal Axes Theorem · constrained optimization) appears in this deck as an <strong>objectives slide only</strong>
+  — PDF p.38 → slide 75, followed by a bare “Population Growth” title slide. The section content is not in this PDF.</p>
+</section>
+
+</body>
+</html>
