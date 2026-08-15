@@ -6,20 +6,77 @@
   <title>Studyroom</title>
   <link rel="stylesheet" href="/style.css">
 </head>
-<body>
+<body class="subject-page">
   <header class="topbar">
     <a class="brand" href="/">Studyroom</a>
     <span class="crumb" id="crumb"></span>
   </header>
-  <main class="page">
-    <h1 id="title"></h1>
-    <p class="lede">The subject page — file list, previews, chat — arrives in M1.</p>
+
+  <!-- Split view (design doc §3.2): left pane = file list + preview, right pane = chat. -->
+  <main class="workspace">
+    <section class="pane-left">
+      <aside class="files" aria-label="Files">
+        <h2>Materials</h2>
+        <div id="materials" class="file-group" data-empty="Nothing here yet — drop PDFs, notes, or lecture videos into this subject's folder."></div>
+        <h2>Generated</h2>
+        <div id="generated" class="file-group" data-empty="Nothing generated yet — study actions will save their output here."></div>
+      </aside>
+
+      <section class="preview" aria-label="Preview">
+        <div class="preview-bar">
+          <span id="preview-title" class="preview-title">Preview</span>
+          <span id="preview-meta" class="preview-meta"></span>
+          <button type="button" id="focus-chat" class="btn small" hidden title="Start a chat dedicated to this file">New focused chat</button>
+          <a id="preview-open" class="preview-open" href="#" target="_blank" rel="noopener" hidden>Open in new tab ↗</a>
+        </div>
+        <div id="preview" class="preview-body">
+          <p class="empty">Pick a file on the left — PDFs, lecture videos, notes and generated study kits all preview here.</p>
+        </div>
+      </section>
+    </section>
+
+    <aside class="pane-right chat" aria-label="Chat">
+      <div class="chat-head">
+        <select id="chat-switcher" class="chat-switcher" title="Switch chat" aria-label="Chat"></select>
+        <input id="chat-rename-input" class="chat-rename-input" type="text" maxlength="80" hidden aria-label="Chat title">
+        <button type="button" id="chat-new" class="btn small" title="Start a new chat about all materials">+ New</button>
+        <button type="button" id="chat-rename" class="btn small icon" title="Rename this chat" aria-label="Rename chat">✎</button>
+        <button type="button" id="chat-delete" class="btn small icon" title="Delete this chat" aria-label="Delete chat">🗑</button>
+      </div>
+      <div id="chat-focus" class="chat-focus" hidden></div>
+      <div id="chat-log" class="chat-log" aria-live="polite"></div>
+      <div class="actions" aria-label="Study actions">
+        <div class="actions-bar">
+          <span id="action-context" class="action-context"></span>
+          <div class="action-buttons">
+            <button type="button" class="btn small primary" data-action="digest" title="One button, complete study kit: notes + visual explainer + worked examples + flashcards + quiz">Digest</button>
+            <button type="button" class="btn small" data-action="summarize" title="Summarize the selected file">Summarize</button>
+            <button type="button" class="btn small" data-action="quiz" title="10-question quiz; answer in chat, get graded">Quiz me</button>
+            <button type="button" class="btn small" data-action="flashcards" title="~20 flashcards in Q:/A: format">Flashcards</button>
+            <button type="button" class="btn small" data-action="explain" title="Exam-style explanation of a concept">Explain</button>
+            <button type="button" class="btn small" data-action="visual" title="Self-contained visual explainer (inline SVG)">Visual</button>
+            <button type="button" class="btn small" data-action="research" title="Web-grounded research note with sources">Research</button>
+          </div>
+        </div>
+        <form id="action-form" class="action-input" hidden>
+          <label id="action-label" for="action-topic" class="action-label"></label>
+          <input id="action-topic" type="text" autocomplete="off">
+          <button type="submit" class="btn small primary">Go</button>
+          <button type="button" id="action-cancel" class="btn small icon" title="Close" aria-label="Close">✕</button>
+        </form>
+      </div>
+      <form id="composer" class="composer">
+        <textarea id="composer-input" rows="2" placeholder="Ask about the materials… (Enter to send, Shift+Enter for a new line)"></textarea>
+        <div class="composer-actions">
+          <span id="chat-status" class="chat-status"></span>
+          <button type="button" id="chat-cancel" class="btn small danger" hidden>Cancel</button>
+          <button type="submit" id="chat-send" class="btn small primary">Send</button>
+        </div>
+      </form>
+    </aside>
   </main>
-  <script>
-    const name = decodeURIComponent(location.pathname.split("/").pop());
-    document.title = `${name} · Studyroom`;
-    document.getElementById("title").textContent = name;
-    document.getElementById("crumb").textContent = name;
-  </script>
+
+  <script src="/vendor/marked.min.js"></script>
+  <script src="/subject.js"></script>
 </body>
 </html>
