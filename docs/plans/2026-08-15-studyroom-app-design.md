@@ -4,6 +4,15 @@
 **For:** the bot-hq agent (or any Claude session) that will build this app. Read this whole file before writing code.
 **Status:** approved starting point. Owner: Gregory (gregoryerrl).
 
+## 0. Builder autonomy — read this first
+
+**Do not ask Gregory questions during the build. Execute.** Every decision is either specified in this doc or explicitly delegated to you:
+
+- For any detail this doc doesn't specify, choose the **simplest option consistent with §1's principles**, record it as one line in `docs/DECISIONS.md` (create that file at M0), and keep going. Gregory reviews DECISIONS.md instead of being interrupted.
+- Never expand scope beyond the current milestone. §3's non-goals stay non-goals even when tempting.
+- The only valid stopping points: (a) a milestone's acceptance checks all pass — stop and report; (b) an acceptance check cannot be made to pass after genuine debugging attempts — write the blocker and what you tried into DECISIONS.md, stop and report. Never stop to ask permission for work this doc already prescribes.
+- All preferences below (§4 look & feel, layout, launch, git posture) were decided with Gregory on 2026-08-15 — do not re-litigate them.
+
 ## 1. What this is
 
 Studyroom is a small local web app that helps Gregory study for university using the materials already sitting in `~/Studyroom`. Each top-level folder there is one course (currently `AI201` — Artificial Intelligence, and `AI211` — linear algebra; more will be added each semester by simply creating folders). The app is a viewer + a per-subject Claude chat: Claude runs as the **Claude Code CLI** (`claude`) with its working directory pinned to the subject folder, so it reads the actual PDFs itself with its own Read/Grep tools — no RAG pipeline, no embeddings, no API keys.
@@ -42,7 +51,7 @@ Verify PDF reading works before building the chat: run `claude -p "Read the firs
 ## 3. v1 scope
 
 1. **Dashboard** — subjects auto-discovered from `$STUDYROOM_DIR`. A subject is any top-level directory whose name does not start with `.` or `_` and is not `docs` or `app`. Show per-subject file count and whether `_generated/` has content.
-2. **Subject page** — file list (materials + `_generated/` in its own section) with in-browser preview: PDFs via `<embed src>` (browser-native viewer), videos via `<video controls>` (Express static serves HTTP Range requests natively, so seeking works with zero extra code), markdown rendered (vendor `marked.min.js` locally, no CDN), text/code as `<pre>`, and `_generated/*.html` visual explainers in a **sandboxed iframe** (`<iframe sandbox src=…>` — CSS and inline SVG render, scripts are blocked; §7.1 forbids Claude from using JS in explainers anyway).
+2. **Subject page** — **split view**: left pane holds the file list and the preview, right pane holds the chat, both always visible (read the material and talk about it simultaneously). Preview per type: PDFs via `<embed src>` (browser-native viewer), videos via `<video controls>` (Express static serves HTTP Range requests natively, so seeking works with zero extra code), markdown rendered (vendor `marked.min.js` locally, no CDN), text/code as `<pre>`, and `_generated/*.html` visual explainers in a **sandboxed iframe** (`<iframe sandbox src=…>` — CSS and inline SVG render, scripts are blocked; §7.1 forbids Claude from using JS in explainers anyway).
 3. **Chat per subject** — a conversation with Claude grounded in that subject's folder. Streams responses, shows tool activity ("Reading mml-book.pdf…"), survives server restarts (history + session resume are persisted).
 4. **Study actions** — buttons that send canned prompts (§7.2) into the same chat, every one of them tuned by the learner profile (§7.0): **Digest** (the flagship — one button turns a file/topic into a complete study kit: notes + visual explainer + worked examples + flashcards + quiz), *Summarize*, *Quiz me*, *Make flashcards*, *Explain a concept*, *Visual explainer* (a self-contained HTML page with inline SVG diagrams — for visual learning), *Research* (web-grounded, beyond the course materials, saved with source URLs). Outputs saved by Claude into `_generated/`.
 5. **Transcribe** — a button on each video file. Claude cannot watch or hear video (model limitation, all current models), so the app runs **local Whisper** (§6.5) to produce a timestamped transcript in `_generated/transcripts/`; from then on the lecture is ordinary text material the chat reads, quotes, and quizzes from. Videos without a transcript show a "not transcribed yet" badge.
@@ -81,6 +90,10 @@ Suggested layout (keep it this small — everything under `app/` in this repo):
   public/           # index.html, subject.html, app.js, style.css, vendor/marked.min.js
   package.json      # deps: express only (add nothing without a reason)
 ```
+
+Plus **`./start`** at the **repo root** (not inside `app/`): a small bash script that installs deps if `app/node_modules/` is missing, starts the server, and opens `http://localhost:4321` (`open` on macOS). That's Gregory's day-to-day entry point.
+
+**Look & feel (decided — do not redesign):** light, clean, academic. Paper-like reading surfaces, generous whitespace, a readable serif for rendered content (markdown, transcripts) with the system sans for UI chrome, one restrained accent color, plain CSS — no Tailwind, no CSS framework, no dark mode in v1. Avoid generic AI-app aesthetics (purple gradients, glassmorphism, cookie-cutter card grids); this should feel like a quiet study desk, not a SaaS landing page. Dashboard is a simple subject list/grid.
 
 ## 5. Data conventions
 
@@ -182,6 +195,7 @@ The CLI owns conversation state. Per subject: capture `session_id` from the `ini
 - **Cancel:** `process.kill(-child.pid, "SIGKILL")` — negative pid kills the whole process group (this is why `detached: true`). Then release the busy flag. Context already accumulated is safe: the next message just `--resume`s. Also cancel when the browser aborts the streaming request (`req.on("close", …)`).
 - **No wall-clock timeout on turns** — Claude legitimately spends minutes on "summarize chapter 7". The Cancel button is the timeout. (One-shot utility spawns, if any are added, should get hard 60s timeouts.)
 - **Exit without `result` event** (crash): treat as error, release the busy flag, keep whatever text already streamed.
+- **Server shutdown reaps children:** because children are `detached`, they survive a server crash/exit unless killed. Keep an in-memory set of live child PIDs (claude turns AND transcription jobs); on `SIGINT`/`SIGTERM`/`exit`, kill every registered process group before exiting — the Node equivalent of bot-hq's reaper.
 
 ### 6.5 Sibling pipeline: video transcription (local Whisper — Claude is not involved)
 
@@ -245,6 +259,8 @@ After these rules the server appends `## How Gregory learns best` + the contents
 - **Visual explainer:** `Create a self-contained visual explainer for <topic> at _generated/visual-<topic>-<date>.html. Inline CSS + inline SVG only, no JavaScript. Show the structure spatially: concept maps, flow diagrams, labeled figures. Text only where a diagram can't carry it.`
 - **Research:** `Research <question> using web search. Cross-reference what you find with the course materials where relevant, and note agreements or differences. Save a note to _generated/research-<topic>-<date>.md with a "## Sources" section listing every URL used. Give me the key findings inline.`
 
+**Targeting (how `<file>`/`<topic>` get filled):** clicking a file in the left pane selects it as the action context — file-scoped actions (Summarize, file-level Digest, Flashcards on a file) use the selected file. Topic-scoped actions (Explain, Research, topic-level Digest) show a single-line text input inline. No modals, no multi-step wizards.
+
 The quiz flow deliberately stays inside the chat (Claude grades follow-up answers via `--resume` context) — no dedicated quiz engine in v1.
 
 ## 8. HTTP API
@@ -264,8 +280,8 @@ Bind to `127.0.0.1:4321` only. JSONL persistence timing: the user message when t
 
 ## 9. Build plan (execute in order; each milestone is independently verifiable)
 
-**M0 — Scaffold + discovery.** Prereqs are already done (§2). Scaffold everything under `app/`: Express server, subject discovery, file listing, static file serve, `.studyroom/` + `chats/` created at boot, bare dashboard page. Add `node_modules/` to the repo's `.gitignore` if not already there.
-*Accept:* (1) `curl localhost:4321/api/subjects` lists AI201 + AI211 and ignores `docs/`, `app/`, dotfolders; (2) a PDF opens in the browser via `/files/AI211/...`; (3) **the §2 claude-reads-a-PDF one-liner passes from inside `AI211/`** (it passed 2026-08-15 — re-run to confirm nothing drifted); M0 is not done until all three pass.
+**M0 — Scaffold + discovery.** Prereqs are already done (§2). Create `docs/DECISIONS.md` (§0). Scaffold everything under `app/`: Express server, subject discovery, file listing, static file serve, `.studyroom/` + `chats/` created at boot, bare dashboard page, and the root `./start` script (§4). `node_modules/` is already gitignored.
+*Accept:* (1) `./start` from the repo root brings the app up and opens the browser; (2) `curl localhost:4321/api/subjects` lists AI201 + AI211 and ignores `docs/`, `app/`, dotfolders; (3) a PDF opens in the browser via `/files/AI211/...`; (4) **the §2 claude-reads-a-PDF one-liner passes from inside `AI211/`** (it passed 2026-08-15 — re-run to confirm nothing drifted); M0 is not done until all four pass.
 
 **M1 — Subject page + previews.** File list UI, PDF embed, video player, markdown rendering, `_generated/` section (empty state fine — and treat a *missing* `_generated/` dir as empty rather than erroring; it doesn't exist until Claude first writes to it).
 *Accept:* can open `mml-book.pdf`, play a lecture `.mp4` with seeking, and view a rendered markdown file from the UI.
