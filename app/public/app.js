@@ -4,10 +4,25 @@ function esc(s) {
 }
 
 const $ = (sel) => document.querySelector(sel);
-const api = (path, opts) => fetch(`/api/subjects${path}`, opts);
 const jsonOpts = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) });
 
 let subjects = [];
+
+/**
+ * fetch() rejects outright when the server is gone (restarted, crashed, laptop asleep). Every call
+ * below fires from an event handler, so a bare rejection is unhandled and the page just sits there
+ * looking like nothing happened. Turn it into a message the user can act on.
+ */
+async function send(url, opts) {
+  try {
+    return await fetch(url, opts);
+  } catch (err) {
+    throw new Error(`can't reach the server — is it still running? (${err.message})`);
+  }
+}
+
+/** Attach to every floating async call: a failure must land in the error line, not the void. */
+const guard = (p) => p.catch((err) => showError(err.message));
 
 /** The server's own message when it sent one; a non-JSON body must not hide the status code. */
 async function errorText(res) {
@@ -46,7 +61,7 @@ function render() {
 
 async function loadSubjects() {
   try {
-    const res = await api("");
+    const res = await send("/api/subjects");
     if (!res.ok) throw new Error(await errorText(res));
     subjects = await res.json();
   } catch (err) {
@@ -58,7 +73,7 @@ async function loadSubjects() {
 
 async function createSubject(name) {
   showError("");
-  const res = await api("", jsonOpts("POST", { name }));
+  const res = await send("/api/subjects", jsonOpts("POST", { name }));
   if (!res.ok) return showError(await errorText(res));
   $("#new-subject-name").value = "";
   await loadSubjects();
@@ -88,22 +103,22 @@ function startRename(li, name) {
     link.hidden = false;
     if (!commit || !next || next === name) return;
     showError("");
-    const res = await api(`/${encodeURIComponent(name)}`, jsonOpts("PATCH", { name: next }));
+    const res = await send(`/api/subjects/${encodeURIComponent(name)}`, jsonOpts("PATCH", { name: next }));
     if (!res.ok) return showError(await errorText(res));
     await loadSubjects();
   };
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); finish(true); }
-    if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    if (e.key === "Enter") { e.preventDefault(); guard(finish(true)); }
+    if (e.key === "Escape") { e.preventDefault(); guard(finish(false)); }
   });
-  input.addEventListener("blur", () => finish(true));
+  input.addEventListener("blur", () => guard(finish(true)));
 }
 
 async function deleteSubject(name) {
   // One confirm, and it says where the folder goes: this is an archive-move, not a delete.
   if (!confirm(`Archive "${name}"?\n\nThe folder moves to .studyroom/archive/subjects/ with its chats — nothing is erased, and you can move it back by hand.`)) return;
   showError("");
-  const res = await api(`/${encodeURIComponent(name)}`, { method: "DELETE" });
+  const res = await send(`/api/subjects/${encodeURIComponent(name)}`, { method: "DELETE" });
   if (!res.ok) return showError(await errorText(res));
   await loadSubjects();
 }
@@ -111,7 +126,7 @@ async function deleteSubject(name) {
 $("#new-subject").addEventListener("submit", (e) => {
   e.preventDefault(); // the form has no action: an unguarded submit would reload this page
   const name = $("#new-subject-name").value.trim();
-  if (name) createSubject(name);
+  if (name) guard(createSubject(name));
 });
 
 $("#subjects").addEventListener("click", (e) => {
@@ -120,7 +135,7 @@ $("#subjects").addEventListener("click", (e) => {
   const li = btn.closest(".subject");
   if (!li) return;
   if (btn.dataset.act === "rename") startRename(li, li.dataset.name);
-  else deleteSubject(li.dataset.name);
+  else guard(deleteSubject(li.dataset.name));
 });
 
 loadSubjects();

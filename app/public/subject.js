@@ -737,6 +737,22 @@ async function errorText(res) {
   }
 }
 
+/**
+ * fetch() rejects outright when the server is gone (restarted, crashed, laptop asleep) — and every
+ * one of these calls is fired from an event handler, so a bare rejection is unhandled and the last
+ * thing the user sees is a status line frozen on "Uploading…". Turn that into a real message.
+ */
+async function send(url, opts) {
+  try {
+    return await fetch(url, opts);
+  } catch (err) {
+    throw new Error(`can't reach the server — is it still running? (${err.message})`);
+  }
+}
+
+/** Attach to every floating async call below: a failure must land in the status line, not the void. */
+const guard = (p) => p.catch((err) => fileStatus(err.message, true));
+
 function fileStatus(message, isError = false) {
   const el = $("#file-status");
   el.textContent = message || "";
@@ -778,9 +794,13 @@ async function uploadFiles(fileList) {
   for (const [i, file] of files.entries()) {
     fileStatus(`Uploading ${file.name} (${i + 1}/${files.length})…`);
     // The raw File IS the body — no multipart, and the browser streams it, so a 350 MB lecture
-    // never lands in memory on either end.
-    const res = await fetch(fileApi(file.name), { method: "PUT", body: file });
-    if (!res.ok) failed.push(`${file.name}: ${await errorText(res)}`);
+    // never lands in memory on either end. One file's failure must not abandon the rest of the drop.
+    try {
+      const res = await send(fileApi(file.name), { method: "PUT", body: file });
+      if (!res.ok) failed.push(`${file.name}: ${await errorText(res)}`);
+    } catch (err) {
+      failed.push(`${file.name}: ${err.message}`);
+    }
   }
   await refreshFiles();
   const ok = files.length - failed.length;
@@ -790,7 +810,7 @@ async function uploadFiles(fileList) {
 
 async function createFile(rawName) {
   const name = /\.[^.]+$/.test(rawName) ? rawName : `${rawName}.md`; // a note without an extension is markdown
-  const res = await fetch(fileApi(name), { method: "PUT", headers: { "Content-Type": "text/plain" }, body: "" });
+  const res = await send(fileApi(name), { method: "PUT", headers: { "Content-Type": "text/plain" }, body: "" });
   if (!res.ok) return fileStatus(await errorText(res), true);
   fileStatus("");
   $("#new-file").hidden = true;
@@ -808,7 +828,7 @@ async function openEditor(entry) {
   if (entry.size > EDIT_MAX) return fileStatus(`${entry.name} is too large to edit here (${fmtSize(entry.size)}).`, true);
   let text;
   try {
-    const res = await fetch(fileUrl(entry.path));
+    const res = await send(fileUrl(entry.path));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     text = await res.text();
   } catch (err) {
@@ -829,7 +849,7 @@ async function openEditor(entry) {
 async function saveEditor() {
   const ta = $("#preview .editor");
   if (!editing || !ta) return;
-  const res = await fetch(fileApi(editing.path, "?overwrite=1"), {
+  const res = await send(fileApi(editing.path, "?overwrite=1"), {
     method: "PUT",
     headers: { "Content-Type": "text/plain; charset=utf-8" },
     body: ta.value,
@@ -865,7 +885,7 @@ function startFileRename() {
     // Only the last segment changes — renaming must not move a file out of its folder.
     const parts = entry.path.split("/");
     parts[parts.length - 1] = next;
-    const res = await fetch(fileApi(entry.path), jsonOpts("PATCH", { path: parts.join("/") }));
+    const res = await send(fileApi(entry.path), jsonOpts("PATCH", { path: parts.join("/") }));
     if (!res.ok) return fileStatus(await errorText(res), true);
     const updated = await res.json();
     await refreshFiles();
@@ -874,10 +894,10 @@ function startFileRename() {
     fileStatus("");
   };
   input.onkeydown = (e) => {
-    if (e.key === "Enter") { e.preventDefault(); finish(true); }
-    if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    if (e.key === "Enter") { e.preventDefault(); guard(finish(true)); }
+    if (e.key === "Escape") { e.preventDefault(); guard(finish(false)); }
   };
-  input.onblur = () => finish(true);
+  input.onblur = () => guard(finish(true));
 }
 
 function clearPreview() {
@@ -896,7 +916,7 @@ async function deleteFile() {
   const entry = entries.find((e) => e.path === selectedPath);
   if (!entry || editing) return;
   if (!confirm(`Archive "${entry.name}"?\n\nIt moves to .studyroom/archive/files/ — nothing is erased, and you can move it back by hand.`)) return;
-  const res = await fetch(fileApi(entry.path), { method: "DELETE" });
+  const res = await send(fileApi(entry.path), { method: "DELETE" });
   if (!res.ok) return fileStatus(await errorText(res), true);
   await refreshFiles();
   clearPreview();
@@ -906,7 +926,7 @@ async function deleteFile() {
 // ---- wiring ----
 $("#file-add").addEventListener("click", () => $("#file-input").click());
 $("#file-input").addEventListener("change", (e) => {
-  uploadFiles(e.target.files);
+  guard(uploadFiles(e.target.files));
   e.target.value = ""; // so re-picking the same file fires 'change' again
 });
 $("#file-new").addEventListener("click", () => {
@@ -917,7 +937,7 @@ $("#file-new").addEventListener("click", () => {
 $("#new-file").addEventListener("submit", (e) => {
   e.preventDefault();
   const name = $("#new-file-name").value.trim();
-  if (name) createFile(name);
+  if (name) guard(createFile(name));
 });
 $("#new-file-cancel").addEventListener("click", () => { $("#new-file").hidden = true; fileStatus(""); });
 $("#new-file-name").addEventListener("keydown", (e) => {
@@ -925,9 +945,9 @@ $("#new-file-name").addEventListener("keydown", (e) => {
 });
 $("#file-edit").addEventListener("click", () => {
   const entry = entries.find((e) => e.path === selectedPath);
-  if (entry) openEditor(entry);
+  if (entry) guard(openEditor(entry));
 });
-$("#file-save").addEventListener("click", saveEditor);
+$("#file-save").addEventListener("click", () => guard(saveEditor()));
 $("#file-edit-cancel").addEventListener("click", () => {
   const path = editing?.path;
   if (!leaveEditor()) return;
@@ -936,23 +956,34 @@ $("#file-edit-cancel").addEventListener("click", () => {
   fileStatus("");
 });
 $("#file-rename").addEventListener("click", startFileRename);
-$("#file-delete").addEventListener("click", deleteFile);
+$("#file-delete").addEventListener("click", () => guard(deleteFile()));
 
-// Drag-and-drop onto the left pane — the Finder-adjacent gesture, same upload path as the button.
+// Drag-and-drop — the Finder-adjacent gesture, same upload path as the button.
+// Bound to the DOCUMENT, not just the file pane: an unhandled drop anywhere else makes the browser
+// NAVIGATE to the dropped file, throwing away the page and whatever chat was on screen. Missing a
+// 260px target by a few pixels should not cost you your session, so the whole page accepts files
+// and the pane just shows where they will land.
 const dropPane = $(".pane-left");
-dropPane.addEventListener("dragover", (e) => {
-  if (![...e.dataTransfer.types].includes("Files")) return;
-  e.preventDefault(); // without this the browser navigates to the dropped file instead
+const dragHasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes("Files");
+document.addEventListener("dragover", (e) => {
+  if (!dragHasFiles(e)) return;
+  e.preventDefault();
   dropPane.classList.add("dropping");
 });
-dropPane.addEventListener("dragleave", (e) => {
-  if (!dropPane.contains(e.relatedTarget)) dropPane.classList.remove("dropping"); // child elements fire this too
+document.addEventListener("dragleave", (e) => {
+  if (!e.relatedTarget) dropPane.classList.remove("dropping"); // null = the pointer left the window
 });
-dropPane.addEventListener("drop", (e) => {
-  if (!e.dataTransfer.files.length) return;
+document.addEventListener("drop", (e) => {
+  if (!dragHasFiles(e)) return;
   e.preventDefault();
   dropPane.classList.remove("dropping");
-  uploadFiles(e.dataTransfer.files);
+  if (e.dataTransfer.files.length) guard(uploadFiles(e.dataTransfer.files));
+});
+
+// A note editor that loses work on a stray Cmd-R is not a note editor. Only speaks up when dirty.
+addEventListener("beforeunload", (e) => {
+  const ta = $("#preview .editor");
+  if (editing && ta && ta.value !== editing.original) e.preventDefault();
 });
 
 $("#chat-switcher").addEventListener("change", (e) => openChat(e.target.value));
