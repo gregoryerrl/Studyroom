@@ -92,10 +92,24 @@ const LOOP_WINDOW_SECONDS = 90; // a repeat within this window is a decoder loop
  * silently cover 58% of the lecture. Returns a note to embed, or null when coverage looks sane.
  */
 export function coverageWarning(segments, duration) {
-  if (!duration || segments.length === 0) return null;
+  if (segments.length === 0) return null;
+  // Silence must mean exactly one thing. Without a duration the check CANNOT run, and an absent
+  // warning would otherwise read as "coverage fine" in the one artifact whose whole risk is
+  // looking complete when it isn't — doubly so because that same run also has no progress
+  // percentage, so both safety nets are out at once.
+  if (!duration) return "⚠️ Coverage unverified — ffprobe returned no duration for this video, so there is no way to tell whether Whisper reached the end. Check the last timestamp below against the actual recording.";
   const lastEnd = segments[segments.length - 1].end;
-  if (lastEnd >= duration * 0.95) return null;
-  return `⚠️ INCOMPLETE: Whisper stopped at ${formatHMS(lastEnd)} of ${formatHMS(duration)} (${Math.round((lastEnd / duration) * 100)}% covered). The rest of this lecture is NOT transcribed — do not treat this as the full recording. Re-run with a different setting, or transcribe the remainder separately.`;
+  const missing = duration - lastEnd;
+  // Trigger on the MISSING TAIL, not a flat percentage. The only benign gap ever measured here is
+  // Lecture 2's 60.6 s of trailing silence (1.6%); a truncation cost 31 minutes. The percentage
+  // floor catches proportional loss on long lectures (3% of 73 min ≈ 2.2 min), and the absolute
+  // floor stops a short clip's ordinary trailing silence from crying wolf (3% of 10 min is 18 s).
+  // Asymmetry is deliberate: a false alarm is a note Gregory dismisses, a miss silently poisons
+  // every digest and quiz built on the file.
+  if (missing <= Math.max(duration * 0.03, 60)) return null;
+  // floor, not round: at the boundary Math.round would print "95% covered" for a 94.9% run and
+  // contradict the threshold in the same sentence.
+  return `⚠️ INCOMPLETE: Whisper stopped at ${formatHMS(lastEnd)} of ${formatHMS(duration)} (${Math.floor((lastEnd / duration) * 100)}% covered, ${formatHMS(missing)} missing). The rest of this lecture is NOT transcribed — do not treat this as the full recording. Re-run with a different setting, or transcribe the remainder separately.`;
 }
 
 /**
