@@ -119,6 +119,57 @@ export async function deleteChat(subject, id) {
   return true;
 }
 
+// ---------- subject-level moves ----------
+// Chat records AND their JSONL directory are keyed by the subject NAME, so a subject rename or
+// archive has to be followed here or every chat of that subject is orphaned.
+
+/** Where archived material goes: <stateDir>/archive/<...parts>. Gitignored, restorable by hand. */
+export function archivePath(...parts) {
+  return path.join(stateDir, "archive", ...parts);
+}
+
+export async function renameSubjectState(from, to) {
+  if (from === to) return;
+  if (state.subjects[from]) {
+    state.subjects[to] = state.subjects[from];
+    delete state.subjects[from];
+    await saveState();
+  }
+  try {
+    await fs.rename(path.join(stateDir, "chats", from), path.join(stateDir, "chats", to));
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err; // a subject nobody has chatted in has no directory
+  }
+}
+
+/** Drop the chat records, move their JSONL beside the archived materials, drop the prompt files. */
+export async function archiveSubjectState(subject, destDir) {
+  const chats = state.subjects[subject]?.chats ?? [];
+  delete state.subjects[subject];
+  await saveState();
+  await fs.mkdir(destDir, { recursive: true });
+  try {
+    await fs.rename(path.join(stateDir, "chats", subject), path.join(destDir, "chats"));
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
+  }
+  await Promise.all(chats.map((c) => fs.rm(promptFile(c.id), { force: true })));
+}
+
+/**
+ * Follow a file rename. A focused chat stores `focus` as a path relative to the subject dir and
+ * prompts.js interpolates it into every system prompt, so a renamed file would leave the prompt
+ * pointing at something that no longer exists. Deliberately does NOT go through updateChat:
+ * renaming a file must not reorder the newest-active-first chat list.
+ */
+export async function retargetFocus(subject, fromRel, toRel) {
+  const hits = subjectState(subject).chats.filter((c) => c.focus === fromRel);
+  if (hits.length === 0) return 0;
+  for (const chat of hits) chat.focus = toRel;
+  await saveState();
+  return hits.length;
+}
+
 // ---------- history (JSONL) ----------
 
 function chatFile(subject, id) {

@@ -1,8 +1,11 @@
 // Studyroom server — Express, static frontend, subject/file API, raw file serving, chats.
 import express from "express";
 import fs from "node:fs/promises";
+import { createWriteStream } from "node:fs";
 import path from "node:path";
-import { listSubjects, subjectDir, listFiles } from "./subjects.js";
+import {
+  listSubjects, subjectDir, listFiles, fileEntry, findSubject, nameError, resolveInSubject,
+} from "./subjects.js";
 import * as store from "./store.js";
 import { buildSystemPrompt, defaultTitle } from "./prompts.js";
 import { runTurn, toolLabel } from "./claude.js";
@@ -15,30 +18,64 @@ const PUBLIC = path.join(HERE, "..", "public");
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.PORT) || 4321; // env override is a dev affordance (scratch trees beside the real server)
 
+// Subjects live in their own directory so the data root stays tidy: <root>/ keeps profile.md and
+// .studyroom/, <root>/subjects/ holds one folder per course. Created on boot so a fresh clone
+// lists nothing rather than depending on readdir failing, then REALPATH'd — subjectDir() returns
+// real paths, and a rename that mixed a real source with a non-real destination would move a
+// subject somewhere else entirely if any parent were a symlink.
+await fs.mkdir(path.join(ROOT, "subjects"), { recursive: true });
+const SUBJECTS = await fs.realpath(path.join(ROOT, "subjects"));
+
 await store.init(STATE_DIR);
 
 const app = express();
 app.disable("x-powered-by");
-app.use(express.json({ limit: "1mb" }));
 app.use(express.static(PUBLIC));
 
-/** Resolve :s to its directory, or answer 404 and return null. */
+// Registered explicitly rather than globally, because the file-write routes below MUST see an
+// untouched request stream — see the comment above them.
+const jsonBody = express.json({ limit: "1mb" });
+
+/**
+ * Resolve :s to { dir, name }, or answer 404 and return null. `name` is the CANONICAL on-disk
+ * name: macOS is case-insensitive but realpath does not fix case, so "/api/subjects/ai201/chats"
+ * used to answer 200 with zero chats while AI201 had two. Canonicalizing in this one place means
+ * only the real name ever reaches the store, so no route can key a second, empty chat bucket.
+ */
 async function requireSubject(req, res) {
-  const dir = await subjectDir(ROOT, req.params.s);
-  if (!dir) res.status(404).json({ error: `no such subject: ${req.params.s}` });
-  return dir;
+  const subject = await subjectDir(SUBJECTS, req.params.s);
+  if (!subject) res.status(404).json({ error: `no such subject: ${req.params.s}` });
+  return subject;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** Resolve :id to a chat record of :s, or answer 404 and return null. */
-function requireChat(req, res) {
-  const chat = UUID.test(req.params.id) ? store.getChat(req.params.s, req.params.id) : null;
+/** Resolve :id to a chat record of `subject`, or answer 404 and return null. */
+function requireChat(req, res, subject) {
+  const chat = UUID.test(req.params.id) ? store.getChat(subject, req.params.id) : null;
   if (!chat) res.status(404).json({ error: "no such chat" });
   return chat;
 }
 
 /** Fire-and-forget persistence inside stream handlers: log, never throw into the pump. */
 const bg = (p) => p.catch((err) => console.error("[store]", err));
+
+/** The `*path` param, as one posix-relative string. */
+const relParam = (req) => (Array.isArray(req.params.path) ? req.params.path.join("/") : String(req.params.path));
+
+/** Local timestamp for archive folder names — toISOString() is UTC and stamps yesterday here after 16:00. */
+function stamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
+}
+
+async function isFile(abs) {
+  return fs.stat(abs).then((st) => st.isFile(), () => false);
+}
+
+function sendError(res, err) {
+  res.status(err.status || 500).json({ error: err.message });
+}
 
 async function readProfile() {
   try {
@@ -48,41 +85,227 @@ async function readProfile() {
   }
 }
 
+// ---------- file mutation (registered BEFORE the JSON body parser) ----------
+//
+// express.json() consumes AND ends the request stream for `application/json`, so a route that
+// pipes `req` never fires: measured on express 5.2.1, a .json upload hung forever with nothing
+// written and a stranded temp file (and a 1.1 MB one got 413 from the parser's own limit). .json
+// is an editable type here, and fetch(body: File) takes its Content-Type from File.type, so the
+// drag-drop path hits exactly that. Registering these first keeps their bodies untouched; PATCH
+// takes the parser explicitly because it genuinely wants JSON.
+
+/** 409 while mlx_whisper is reading this exact file — archiving it mid-run pulls the source away. */
+function transcribeConflict(res, subject, rel) {
+  if (transcribing?.subject === subject && transcribing.file === rel) {
+    res.status(409).json({ error: `${rel} is being transcribed right now — cancel that first` });
+    return true;
+  }
+  return false;
+}
+
+// Upload or save: the raw body IS the file. One PUT per file, streamed to disk — no multipart
+// parser, no dependency, and a 350 MB video never lands in memory.
+app.put("/api/subjects/:s/files/*path", async (req, res) => {
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
+  let target;
+  try {
+    target = await resolveInSubject(subject.dir, relParam(req), { mkdirs: true });
+  } catch (err) {
+    return sendError(res, err);
+  }
+  if (transcribeConflict(res, subject.name, target.rel)) return;
+
+  const existed = await isFile(target.abs);
+  if (existed && req.query.overwrite !== "1") {
+    return res.status(409).json({ error: "a file with that name already exists" });
+  }
+
+  // Atomic: stream into a dotfile temp beside the target, rename on success. The dotfile is hidden
+  // from walk() so a stray temp never shows in the UI, and *.part is gitignored so an aborted
+  // 350 MB upload can never be staged.
+  const tmp = path.join(target.parent, `.${path.basename(target.abs)}.part`);
+  await fs.rm(tmp, { force: true }); // a SIGKILLed server never runs the cleanup below
+  const out = createWriteStream(tmp);
+  let settled = false;
+  const fail = (status, message) => {
+    if (settled) return;
+    settled = true;
+    out.destroy();
+    fs.rm(tmp, { force: true }).catch(() => {});
+    if (!res.headersSent) res.status(status).json({ error: message });
+  };
+  // 'res' close, not 'req' — req 'close' fires as soon as the body is read on Node >= 16.
+  res.on("close", () => { if (!res.writableFinished) fail(499, "upload aborted"); });
+  req.on("error", (err) => fail(400, err.message));
+  out.on("error", (err) => fail(500, err.message));
+  out.on("finish", async () => {
+    if (settled) return;
+    settled = true;
+    try {
+      await fs.rename(tmp, target.abs);
+      res.status(existed ? 200 : 201).json(await fileEntry(subject.dir, target.rel));
+    } catch (err) {
+      await fs.rm(tmp, { force: true }).catch(() => {});
+      if (!res.headersSent) sendError(res, err);
+    }
+  });
+  req.pipe(out);
+});
+
+// Rename/move within the subject.
+app.patch("/api/subjects/:s/files/*path", jsonBody, async (req, res) => {
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
+  let from, to;
+  try {
+    from = await resolveInSubject(subject.dir, relParam(req));
+    to = await resolveInSubject(subject.dir, req.body?.path, { mkdirs: true });
+  } catch (err) {
+    return sendError(res, err);
+  }
+  if (transcribeConflict(res, subject.name, from.rel)) return;
+  const source = await fs.stat(from.abs).catch(() => null);
+  if (!source?.isFile()) return res.status(404).json({ error: "no such file" });
+  // Compare inodes, not paths: on a case-insensitive filesystem "notes.md" → "Notes.md" stats the
+  // SAME file, and a path-equality check would answer 409 on a legitimate case-only rename.
+  const clash = await fs.stat(to.abs).catch(() => null);
+  if (clash && !(clash.ino === source.ino && clash.dev === source.dev)) {
+    return res.status(409).json({ error: "a file with that name already exists" });
+  }
+  try {
+    await fs.rename(from.abs, to.abs);
+  } catch (err) {
+    return sendError(res, err);
+  }
+  await store.retargetFocus(subject.name, from.rel, to.rel);
+  res.json(await fileEntry(subject.dir, to.rel));
+});
+
+// Delete = archive-move, never rm: the file goes to .studyroom/archive/files/<Subject>/<stamp>/,
+// which is gitignored and restorable by hand. Nothing the app does destroys a material.
+app.delete("/api/subjects/:s/files/*path", async (req, res) => {
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
+  let target;
+  try {
+    target = await resolveInSubject(subject.dir, relParam(req));
+  } catch (err) {
+    return sendError(res, err);
+  }
+  if (transcribeConflict(res, subject.name, target.rel)) return;
+  if (!(await isFile(target.abs))) return res.status(404).json({ error: "no such file" });
+  const dest = store.archivePath("files", subject.name, stamp(), target.rel);
+  try {
+    await fs.mkdir(path.dirname(dest), { recursive: true });
+    await fs.rename(target.abs, dest);
+  } catch (err) {
+    return sendError(res, err);
+  }
+  res.status(204).end();
+});
+
+app.use(jsonBody); // everything from here on parses JSON bodies normally
+
 // ---------- subjects & files ----------
 
+async function subjectRecord(name) {
+  const { materials, generated } = await listFiles(path.join(SUBJECTS, name));
+  return { name, fileCount: materials.length, hasGenerated: generated.length > 0 };
+}
+
+/** Why a subject can't be renamed/archived right now, or null. */
+function subjectBusy(name) {
+  if (transcribing?.subject === name) return `a transcription is running in ${name} — wait for it or cancel it`;
+  if (store.listChats(name).some((c) => busy.has(c.id))) return `a chat in ${name} is mid-answer — wait for it or cancel it`;
+  return null;
+}
+
 app.get("/api/subjects", async (req, res) => {
-  res.json(await listSubjects(ROOT));
+  res.json(await listSubjects(SUBJECTS));
+});
+
+app.post("/api/subjects", async (req, res) => {
+  const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  const bad = nameError(name);
+  if (bad) return res.status(400).json({ error: bad });
+  const clash = await findSubject(SUBJECTS, name);
+  if (clash) return res.status(409).json({ error: `a subject named ${clash} already exists` });
+  try {
+    await fs.mkdir(path.join(SUBJECTS, name)); // non-recursive: EEXIST is a real answer, not a no-op
+  } catch (err) {
+    return res.status(err.code === "EEXIST" ? 409 : 500).json({ error: err.message });
+  }
+  res.status(201).json({ name, fileCount: 0, hasGenerated: false });
+});
+
+app.patch("/api/subjects/:s", async (req, res) => {
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
+  const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  const bad = nameError(name);
+  if (bad) return res.status(400).json({ error: bad });
+  if (name === subject.name) return res.json(await subjectRecord(name));
+  // findSubject matches case-insensitively, so a clash resolving to THIS subject is a case-only
+  // rename ("ai201" → "AI201") and must be allowed through.
+  const clash = await findSubject(SUBJECTS, name);
+  if (clash && clash !== subject.name) return res.status(409).json({ error: `a subject named ${clash} already exists` });
+  const blocked = subjectBusy(subject.name);
+  if (blocked) return res.status(409).json({ error: blocked });
+  try {
+    await fs.rename(subject.dir, path.join(SUBJECTS, name));
+  } catch (err) {
+    return sendError(res, err);
+  }
+  await store.renameSubjectState(subject.name, name);
+  res.json(await subjectRecord(name));
+});
+
+app.delete("/api/subjects/:s", async (req, res) => {
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
+  const blocked = subjectBusy(subject.name);
+  if (blocked) return res.status(409).json({ error: blocked });
+  // Archive-move, never rm: materials/ and chats/ land together under one restorable folder.
+  const dest = store.archivePath("subjects", `${subject.name}-${stamp()}`);
+  try {
+    await fs.mkdir(dest, { recursive: true });
+    await fs.rename(subject.dir, path.join(dest, "materials"));
+  } catch (err) {
+    return sendError(res, err);
+  }
+  await store.archiveSubjectState(subject.name, dest);
+  res.status(204).end();
 });
 
 app.get("/api/subjects/:s/files", async (req, res) => {
-  const dir = await requireSubject(req, res);
-  if (!dir) return;
-  res.json(await listFiles(dir));
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
+  res.json(await listFiles(subject.dir));
 });
 
 // Raw materials + _generated for previews. Path-traversal-safe: realpath the target (so `..`
 // AND symlinks are resolved on disk), then require it to sit inside the subject's real dir.
 // `send` gives Range (video seeking), ETag, content-type.
 app.get("/files/:s/*path", async (req, res) => {
-  const dir = await requireSubject(req, res);
-  if (!dir) return;
-  const rel = Array.isArray(req.params.path) ? req.params.path.join("/") : String(req.params.path);
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
   let abs;
   try {
-    abs = await fs.realpath(path.resolve(dir, rel));
+    abs = await fs.realpath(path.resolve(subject.dir, relParam(req)));
   } catch (err) {
     const missing = err.code === "ENOENT" || err.code === "ENOTDIR";
     return res.status(missing ? 404 : 500).json({ error: missing ? "no such file" : err.message });
   }
-  if (!abs.startsWith(dir + path.sep)) return res.status(403).json({ error: "path outside subject" });
+  if (!abs.startsWith(subject.dir + path.sep)) return res.status(403).json({ error: "path outside subject" });
   res.sendFile(abs, { dotfiles: "deny" }, (err) => {
     if (err && !res.headersSent) res.status(err.status || 500).json({ error: err.message });
   });
 });
 
 app.get("/subjects/:s", async (req, res) => {
-  const dir = await requireSubject(req, res);
-  if (!dir) return;
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
   res.sendFile(path.join(PUBLIC, "subject.html"));
 });
 
@@ -91,35 +314,35 @@ app.get("/subjects/:s", async (req, res) => {
 const busy = new Map(); // chatId → { cancel() } while a turn is running (one turn at a time per chat)
 
 app.get("/api/subjects/:s/chats", async (req, res) => {
-  const dir = await requireSubject(req, res);
-  if (!dir) return;
-  res.json(store.listChats(req.params.s).map((c) => ({ ...c, busy: busy.has(c.id) })));
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
+  res.json(store.listChats(subject.name).map((c) => ({ ...c, busy: busy.has(c.id) })));
 });
 
 app.post("/api/subjects/:s/chats", async (req, res) => {
-  const dir = await requireSubject(req, res);
-  if (!dir) return;
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
   let focus = null;
   if (req.body?.focus != null) {
     focus = String(req.body.focus);
-    const { materials, generated } = await listFiles(dir);
+    const { materials, generated } = await listFiles(subject.dir);
     if (![...materials, ...generated].some((f) => f.path === focus)) return res.status(404).json({ error: "no such file to focus on" });
   }
-  res.status(201).json(await store.createChat(req.params.s, { focus }));
+  res.status(201).json(await store.createChat(subject.name, { focus }));
 });
 
 app.get("/api/subjects/:s/chats/:id", async (req, res) => {
-  const dir = await requireSubject(req, res);
-  if (!dir) return;
-  const chat = requireChat(req, res);
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
+  const chat = requireChat(req, res, subject.name);
   if (!chat) return;
-  res.json({ chat: { ...chat, busy: busy.has(chat.id) }, history: await store.readHistory(req.params.s, chat.id) });
+  res.json({ chat: { ...chat, busy: busy.has(chat.id) }, history: await store.readHistory(subject.name, chat.id) });
 });
 
 app.patch("/api/subjects/:s/chats/:id", async (req, res) => {
-  const dir = await requireSubject(req, res);
-  if (!dir) return;
-  const chat = requireChat(req, res);
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
+  const chat = requireChat(req, res, subject.name);
   if (!chat) return;
   const body = req.body ?? {};
   const patch = {};
@@ -139,23 +362,23 @@ app.patch("/api/subjects/:s/chats/:id", async (req, res) => {
     patch[field] = value;
   }
   if (Object.keys(patch).length === 0) return res.status(400).json({ error: "nothing to update" });
-  res.json(await store.updateChat(req.params.s, chat.id, patch));
+  res.json(await store.updateChat(subject.name, chat.id, patch));
 });
 
 app.delete("/api/subjects/:s/chats/:id", async (req, res) => {
-  const dir = await requireSubject(req, res);
-  if (!dir) return;
-  const chat = requireChat(req, res);
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
+  const chat = requireChat(req, res, subject.name);
   if (!chat) return;
   if (busy.has(chat.id)) return res.status(409).json({ error: "this chat is busy — cancel or wait first" });
-  await store.deleteChat(req.params.s, chat.id);
+  await store.deleteChat(subject.name, chat.id);
   res.status(204).end();
 });
 
 app.post("/api/subjects/:s/chats/:id/cancel", async (req, res) => {
-  const dir = await requireSubject(req, res);
-  if (!dir) return;
-  const chat = requireChat(req, res);
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
+  const chat = requireChat(req, res, subject.name);
   if (!chat) return;
   const running = busy.get(chat.id);
   running?.cancel();
@@ -166,11 +389,11 @@ app.post("/api/subjects/:s/chats/:id/cancel", async (req, res) => {
 // ({kind:"delta"|"text"|"tool_use"|"done"|"error"}), persist tool_use lines as they arrive and
 // ONE assistant line at the end. Client abort = cancel. 409 while the chat is busy.
 app.post("/api/subjects/:s/chats/:id/messages", async (req, res) => {
-  const dir = await requireSubject(req, res);
-  if (!dir) return;
-  const chat = requireChat(req, res);
+  const found = await requireSubject(req, res);
+  if (!found) return;
+  const { dir, name: subject } = found;
+  const chat = requireChat(req, res, subject);
   if (!chat) return;
-  const subject = req.params.s;
   const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
   if (!message) return res.status(400).json({ error: "message required" });
   if (busy.has(chat.id)) return res.status(409).json({ error: "this chat is busy — cancel or wait for the current answer" });
@@ -187,12 +410,20 @@ app.post("/api/subjects/:s/chats/:id/messages", async (req, res) => {
   });
 
   const promptPath = store.promptFile(chat.id);
+  let focus = chat.focus;
   try {
     await store.appendChatLine(subject, chat.id, { kind: "user", text: message });
     if (!chat.title) await store.updateChat(subject, chat.id, { title: defaultTitle(message) });
-    const { materials } = await listFiles(dir);
+    const { materials, generated } = await listFiles(dir);
     const syllabusFile = materials.find((m) => /syllabus/i.test(m.name))?.name ?? null;
-    await fs.writeFile(promptPath, buildSystemPrompt({ subject, syllabusFile, profileText: await readProfile(), focus: chat.focus }));
+    // focus is validated once at chat creation and interpolated into every prompt thereafter, so a
+    // focus file that has since been deleted or archived would steer the whole chat at a file that
+    // is not there. Re-check it against the listing we already have and drop it if it is gone.
+    if (focus && ![...materials, ...generated].some((f) => f.path === focus)) {
+      await store.updateChat(subject, chat.id, { focus: null });
+      focus = null;
+    }
+    await fs.writeFile(promptPath, buildSystemPrompt({ subject, syllabusFile, profileText: await readProfile(), focus }));
   } catch (err) {
     busy.delete(chat.id);
     return res.status(500).json({ error: err.message });
@@ -275,16 +506,17 @@ app.post("/api/subjects/:s/chats/:id/messages", async (req, res) => {
 
 // ONE job at a time GLOBALLY — it saturates the GPU/ANE. Deliberately NOT the per-chat `busy`
 // map above: that is keyed by chat and this lock spans every subject.
-let transcribing = null; // { cancel(), file } while a job runs
+let transcribing = null; // { subject, file, cancel() } while a job runs
 
 app.post("/api/subjects/:s/transcribe", async (req, res) => {
-  const dir = await requireSubject(req, res);
-  if (!dir) return;
+  const subject = await requireSubject(req, res);
+  if (!subject) return;
+  const dir = subject.dir;
   const { file, force = false, language = null, translate = false } = req.body ?? {};
 
   // The path is client-supplied and we are about to exec a subprocess on it, so it must be a
   // MEMBER of the listing rather than a path we join. That is containment by construction:
-  // walk() skips dotfiles (subjects.js:78) and only emits Dirent.isFile() entries (:84), which is
+  // walk() skips dotfiles (subjects.js) and only emits Dirent.isFile() entries, which is
   // false for symlinks — so nothing outside the subject dir can appear here to be chosen.
   const { materials } = await listFiles(dir);
   const entry = materials.find((m) => m.path === file);
@@ -301,7 +533,8 @@ app.post("/api/subjects/:s/transcribe", async (req, res) => {
   if (transcribing) return res.status(409).json({ error: `already transcribing ${transcribing.file} — wait or cancel it` });
   const stray = await findStrayJob();
   if (stray) return res.status(409).json({ error: `a transcription (pid ${stray}) is already running outside this server — wait for it or stop it` });
-  transcribing = { file, cancel() {} }; // reserve before any await below
+  // `subject` is recorded so the file/subject mutation routes can 409 against a running job.
+  transcribing = { subject: subject.name, file, cancel() {} }; // reserve before any await below
 
   res.writeHead(200, {
     "Content-Type": "application/x-ndjson; charset=utf-8",
@@ -328,11 +561,11 @@ app.post("/api/subjects/:s/transcribe", async (req, res) => {
       error: ({ message }) => settle({ kind: "error", text: message }),
     },
   );
-  transcribing = { file, cancel: job.cancel };
+  transcribing = { subject: subject.name, file, cancel: job.cancel };
   // 'res' close, not 'req' — req fires as soon as the body is read on Node >= 16.
   res.on("close", () => { if (!done) job.cancel(); });
 });
 
 app.listen(PORT, HOST, () => {
-  console.log(`Studyroom → http://${HOST}:${PORT}  (root: ${ROOT})`);
+  console.log(`Studyroom → http://${HOST}:${PORT}  (root: ${ROOT}, subjects: ${SUBJECTS})`);
 });

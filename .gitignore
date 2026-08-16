@@ -8,3 +8,10 @@ node_modules/
 *.mov
 *.mkv
 *.webm
+
+# In-flight writes: uploads land as `.<name>.part` and transcripts as `.<stem>.md.partial`,
+# renamed into place only on success. A dotfile is invisible to the app's own listing (walk()
+# skips them) but NOT to git — an aborted 350 MB video upload would otherwise be stageable,
+# and it is exactly the file that blows the 100 MB limit above.
+*.part
+*.partial

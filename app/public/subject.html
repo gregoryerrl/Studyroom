@@ -16,8 +16,19 @@
   <main class="workspace">
     <section class="pane-left">
       <aside class="files" aria-label="Files">
-        <h2>Materials</h2>
-        <div id="materials" class="file-group" data-empty="Nothing here yet — drop PDFs, notes, or lecture videos into this subject's folder."></div>
+        <div class="files-bar">
+          <h2>Materials</h2>
+          <button type="button" id="file-add" class="btn small" title="Upload files into this subject (or drop them anywhere on this pane)">↑ Upload</button>
+          <button type="button" id="file-new" class="btn small" title="Create a new markdown note and start writing">+ Note</button>
+        </div>
+        <input type="file" id="file-input" multiple hidden>
+        <form id="new-file" class="new-file" hidden>
+          <input id="new-file-name" type="text" autocomplete="off" placeholder="my-notes.md" aria-label="New file name">
+          <button type="submit" class="btn small primary">Create</button>
+          <button type="button" id="new-file-cancel" class="btn small icon" title="Close" aria-label="Close">✕</button>
+        </form>
+        <p id="file-status" class="file-status" hidden></p>
+        <div id="materials" class="file-group" data-empty="Nothing here yet — upload PDFs, notes or lecture videos, or drop them onto this pane."></div>
         <h2>Generated</h2>
         <div id="generated" class="file-group" data-empty="Nothing generated yet — study actions will save their output here."></div>
       </aside>
@@ -25,7 +36,13 @@
       <section class="preview" aria-label="Preview">
         <div class="preview-bar">
           <span id="preview-title" class="preview-title">Preview</span>
+          <input id="file-rename-input" class="file-rename-input" type="text" hidden aria-label="File name">
           <span id="preview-meta" class="preview-meta"></span>
+          <button type="button" id="file-edit" class="btn small" hidden title="Edit this file's text">Edit</button>
+          <button type="button" id="file-save" class="btn small primary" hidden title="Save your changes">Save</button>
+          <button type="button" id="file-edit-cancel" class="btn small" hidden>Cancel</button>
+          <button type="button" id="file-rename" class="btn small icon" hidden title="Rename this file" aria-label="Rename file">✎</button>
+          <button type="button" id="file-delete" class="btn small icon danger" hidden title="Archive this file" aria-label="Archive file">🗑</button>
           <button type="button" id="transcribe" class="btn small" hidden title="Transcribe this lecture with local Whisper — one job at a time, takes a fraction of the video's length">Transcribe</button>
           <button type="button" id="focus-chat" class="btn small" hidden title="Start a chat dedicated to this file">New focused chat</button>
           <a id="preview-open" class="preview-open" href="#" target="_blank" rel="noopener" hidden>Open in new tab ↗</a>

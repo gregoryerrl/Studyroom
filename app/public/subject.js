@@ -83,7 +83,8 @@ document.addEventListener("click", (ev) => {
   const btn = ev.target.closest(".file");
   if (!btn) return;
   const entry = entries.find((e) => e.path === btn.dataset.path);
-  if (entry) select(entry);
+  if (!entry || !leaveEditor()) return; // never swap the preview out from under unsaved edits
+  select(entry);
 });
 
 // marked has no sanitizer. Rendered markdown lands in the app's own origin, so strip anything
@@ -164,6 +165,7 @@ async function renderPreview(entry) {
     default:
       body.innerHTML = `<p class="empty">No preview for this file type. <a href="${esc(url)}" download>Download ${esc(entry.name)}</a></p>`;
   }
+  syncFileButtons(entry);
 }
 
 (async function init() {
@@ -713,7 +715,246 @@ function updateActionContext() {
   if (busy || (pendingAction && (file?.path ?? null) !== (pendingAction.file?.path ?? null))) hideActionInput();
 }
 
+// =====================================================================================
+// File management — upload, write, rename, archive. The app owns Gregory's materials now;
+// Claude's own rules (prompts.js) are unchanged: it still only CREATES, only under _generated/.
+// =====================================================================================
+
+const EDITABLE = new Set(["markdown", "text", "html"]); // mirrors isEditable() on the server
+const EDIT_MAX = 1024 * 1024;                            // a 50 MB text file has no business in a <textarea>
+
+let editing = null; // { path, original } while the editor is open
+
+const fileApi = (relPath, query = "") =>
+  `/api/subjects/${encodeURIComponent(subject)}/files/${relPath.split("/").map(encodeURIComponent).join("/")}${query}`;
+
+/** The server's own message when it sent one; a non-JSON body must not hide the status code. */
+async function errorText(res) {
+  try {
+    return (await res.json()).error || `HTTP ${res.status}`;
+  } catch {
+    return `HTTP ${res.status}`;
+  }
+}
+
+function fileStatus(message, isError = false) {
+  const el = $("#file-status");
+  el.textContent = message || "";
+  el.hidden = !message;
+  el.classList.toggle("error", Boolean(isError));
+}
+
+const refreshFiles = () => loadFiles().catch((err) => console.warn("file list refresh failed:", err.message));
+
+/** Which preview-bar buttons apply right now. Called at the end of every renderPreview(). */
+function syncFileButtons(entry) {
+  const open = Boolean(editing);
+  $("#file-edit").hidden = open || !entry || !EDITABLE.has(entry.type);
+  $("#file-save").hidden = !open;
+  $("#file-edit-cancel").hidden = !open;
+  $("#file-rename").hidden = open || !entry;
+  $("#file-delete").hidden = open || !entry;
+  if (open) {
+    // While the editor is up, every action that reads the file off disk would read a stale copy.
+    $("#transcribe").hidden = true;
+    $("#focus-chat").hidden = true;
+    $("#preview-open").hidden = true;
+  }
+}
+
+/** True if it is safe to leave the editor — closes it, asking first only when the text changed. */
+function leaveEditor() {
+  if (!editing) return true;
+  const ta = $("#preview .editor");
+  if (ta && ta.value !== editing.original && !confirm("Discard your unsaved changes?")) return false;
+  editing = null;
+  return true;
+}
+
+async function uploadFiles(fileList) {
+  const files = [...fileList];
+  if (files.length === 0) return;
+  const failed = [];
+  for (const [i, file] of files.entries()) {
+    fileStatus(`Uploading ${file.name} (${i + 1}/${files.length})…`);
+    // The raw File IS the body — no multipart, and the browser streams it, so a 350 MB lecture
+    // never lands in memory on either end.
+    const res = await fetch(fileApi(file.name), { method: "PUT", body: file });
+    if (!res.ok) failed.push(`${file.name}: ${await errorText(res)}`);
+  }
+  await refreshFiles();
+  const ok = files.length - failed.length;
+  if (failed.length) fileStatus(failed.join(" · "), true);
+  else fileStatus(`Uploaded ${ok} file${ok === 1 ? "" : "s"}.`);
+}
+
+async function createFile(rawName) {
+  const name = /\.[^.]+$/.test(rawName) ? rawName : `${rawName}.md`; // a note without an extension is markdown
+  const res = await fetch(fileApi(name), { method: "PUT", headers: { "Content-Type": "text/plain" }, body: "" });
+  if (!res.ok) return fileStatus(await errorText(res), true);
+  fileStatus("");
+  $("#new-file").hidden = true;
+  $("#new-file-name").value = "";
+  await refreshFiles();
+  const entry = entries.find((e) => e.path === name);
+  if (entry) {
+    select(entry);
+    openEditor(entry); // a new note opens straight into the editor — that is the point of it
+  }
+}
+
+async function openEditor(entry) {
+  if (!EDITABLE.has(entry.type)) return;
+  if (entry.size > EDIT_MAX) return fileStatus(`${entry.name} is too large to edit here (${fmtSize(entry.size)}).`, true);
+  let text;
+  try {
+    const res = await fetch(fileUrl(entry.path));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    text = await res.text();
+  } catch (err) {
+    return fileStatus(`Could not open ${entry.name}: ${err.message}`, true);
+  }
+  editing = { path: entry.path, original: text };
+  const ta = document.createElement("textarea");
+  ta.className = "editor";
+  ta.spellcheck = false;
+  ta.value = text;
+  const body = $("#preview");
+  body.className = "preview-body kind-editor";
+  body.replaceChildren(ta);
+  syncFileButtons(entry);
+  ta.focus();
+}
+
+async function saveEditor() {
+  const ta = $("#preview .editor");
+  if (!editing || !ta) return;
+  const res = await fetch(fileApi(editing.path, "?overwrite=1"), {
+    method: "PUT",
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
+    body: ta.value,
+  });
+  if (!res.ok) return fileStatus(await errorText(res), true);
+  const path = editing.path;
+  editing = null;
+  await refreshFiles();
+  const entry = entries.find((e) => e.path === path);
+  if (entry) renderPreview(entry);
+  fileStatus("Saved.");
+}
+
+function startFileRename() {
+  const entry = entries.find((e) => e.path === selectedPath);
+  if (!entry || editing) return;
+  const input = $("#file-rename-input");
+  const title = $("#preview-title");
+  input.value = entry.name;
+  input.hidden = false;
+  title.hidden = true;
+  input.focus();
+  input.select();
+
+  let done = false;
+  const finish = async (commit) => {
+    if (done) return;
+    done = true;
+    input.hidden = true;
+    title.hidden = false;
+    const next = input.value.trim();
+    if (!commit || !next || next === entry.name) return;
+    // Only the last segment changes — renaming must not move a file out of its folder.
+    const parts = entry.path.split("/");
+    parts[parts.length - 1] = next;
+    const res = await fetch(fileApi(entry.path), jsonOpts("PATCH", { path: parts.join("/") }));
+    if (!res.ok) return fileStatus(await errorText(res), true);
+    const updated = await res.json();
+    await refreshFiles();
+    const moved = entries.find((e) => e.path === updated.path);
+    if (moved) select(moved);
+    fileStatus("");
+  };
+  input.onkeydown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    if (e.key === "Escape") { e.preventDefault(); finish(false); }
+  };
+  input.onblur = () => finish(true);
+}
+
+function clearPreview() {
+  selectedPath = null;
+  const body = $("#preview");
+  body.className = "preview-body";
+  body.innerHTML = `<p class="empty">Pick a file on the left — PDFs, lecture videos, notes and generated study kits all preview here.</p>`;
+  $("#preview-title").textContent = "Preview";
+  $("#preview-meta").textContent = "";
+  for (const id of ["#preview-open", "#focus-chat", "#transcribe"]) $(id).hidden = true;
+  syncFileButtons(null);
+  updateActionContext();
+}
+
+async function deleteFile() {
+  const entry = entries.find((e) => e.path === selectedPath);
+  if (!entry || editing) return;
+  if (!confirm(`Archive "${entry.name}"?\n\nIt moves to .studyroom/archive/files/ — nothing is erased, and you can move it back by hand.`)) return;
+  const res = await fetch(fileApi(entry.path), { method: "DELETE" });
+  if (!res.ok) return fileStatus(await errorText(res), true);
+  await refreshFiles();
+  clearPreview();
+  fileStatus(`Archived ${entry.name}.`);
+}
+
 // ---- wiring ----
+$("#file-add").addEventListener("click", () => $("#file-input").click());
+$("#file-input").addEventListener("change", (e) => {
+  uploadFiles(e.target.files);
+  e.target.value = ""; // so re-picking the same file fires 'change' again
+});
+$("#file-new").addEventListener("click", () => {
+  const form = $("#new-file");
+  form.hidden = !form.hidden;
+  if (!form.hidden) $("#new-file-name").focus();
+});
+$("#new-file").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const name = $("#new-file-name").value.trim();
+  if (name) createFile(name);
+});
+$("#new-file-cancel").addEventListener("click", () => { $("#new-file").hidden = true; fileStatus(""); });
+$("#new-file-name").addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { e.preventDefault(); $("#new-file").hidden = true; }
+});
+$("#file-edit").addEventListener("click", () => {
+  const entry = entries.find((e) => e.path === selectedPath);
+  if (entry) openEditor(entry);
+});
+$("#file-save").addEventListener("click", saveEditor);
+$("#file-edit-cancel").addEventListener("click", () => {
+  const path = editing?.path;
+  if (!leaveEditor()) return;
+  const entry = entries.find((e) => e.path === path);
+  if (entry) renderPreview(entry);
+  fileStatus("");
+});
+$("#file-rename").addEventListener("click", startFileRename);
+$("#file-delete").addEventListener("click", deleteFile);
+
+// Drag-and-drop onto the left pane — the Finder-adjacent gesture, same upload path as the button.
+const dropPane = $(".pane-left");
+dropPane.addEventListener("dragover", (e) => {
+  if (![...e.dataTransfer.types].includes("Files")) return;
+  e.preventDefault(); // without this the browser navigates to the dropped file instead
+  dropPane.classList.add("dropping");
+});
+dropPane.addEventListener("dragleave", (e) => {
+  if (!dropPane.contains(e.relatedTarget)) dropPane.classList.remove("dropping"); // child elements fire this too
+});
+dropPane.addEventListener("drop", (e) => {
+  if (!e.dataTransfer.files.length) return;
+  e.preventDefault();
+  dropPane.classList.remove("dropping");
+  uploadFiles(e.dataTransfer.files);
+});
+
 $("#chat-switcher").addEventListener("change", (e) => openChat(e.target.value));
 $("#chat-new").addEventListener("click", () => newChat());
 $("#chat-rename").addEventListener("click", startRename);

@@ -12,7 +12,12 @@
   </header>
   <main class="page">
     <h1>Subjects</h1>
-    <p class="lede">Every folder in your Studyroom is a course. Add a subject by creating a folder; add materials by dropping files into it.</p>
+    <p class="lede">One folder per course, kept in <code>subjects/</code>. Add a course here, then put materials in it from its own page — or straight from Finder.</p>
+    <form id="new-subject" class="new-subject">
+      <input id="new-subject-name" type="text" maxlength="64" autocomplete="off" placeholder="New subject, e.g. AI221" aria-label="New subject name">
+      <button type="submit" class="btn primary">Add subject</button>
+    </form>
+    <p id="dash-error" class="error" hidden></p>
     <ul id="subjects" class="subject-list" aria-live="polite"><li class="empty">Loading…</li></ul>
   </main>
   <script src="/app.js"></script>

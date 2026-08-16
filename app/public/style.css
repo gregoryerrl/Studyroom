@@ -63,7 +63,12 @@ h1 {
   display: grid;
   gap: 0.75rem;
 }
+/* The <li> is the row and the <a> fills it, so the per-subject buttons can sit alongside the
+   link without being inside it (a button inside an anchor is not a thing). */
+.subject { display: flex; align-items: center; gap: 0.4rem; }
 .subject a {
+  flex: 1;
+  min-width: 0;
   display: flex;
   justify-content: space-between;
   align-items: baseline;
@@ -79,7 +84,23 @@ h1 {
 .subject-name { font-family: var(--serif); font-size: 1.25rem; }
 .subject-meta { color: var(--muted); font-size: 0.9rem; white-space: nowrap; }
 .subject-meta .dot { color: var(--accent); }
+.subject-actions { display: flex; gap: 0.25rem; }
 .empty { color: var(--muted); padding: 1rem 0; }
+
+.new-subject { display: flex; gap: 0.5rem; margin: 0 0 1.25rem; }
+.new-subject input, .subject-rename {
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  color: inherit;
+}
+.new-subject input { flex: 1; max-width: 24rem; }
+.new-subject input:focus, .subject-rename:focus { outline: none; border-color: var(--accent); }
+.subject-rename { flex: 1; font-family: var(--serif); font-size: 1.25rem; padding: 0.85rem 1.15rem; }
+#dash-error { margin: -0.75rem 0 1.25rem; }
 
 /* ---------- Subject page: split view — left pane = files + preview, right pane = chat ---------- */
 .subject-page { overflow: hidden; }
@@ -117,6 +138,27 @@ h1 {
   margin: 0.9rem 1rem 0.35rem;
 }
 .files h2:first-child { margin-top: 0.4rem; }
+/* Upload / new-note controls sit on the Materials heading row. */
+.files-bar { display: flex; align-items: center; gap: 0.3rem; padding-right: 0.6rem; }
+.files-bar h2 { flex: 1; }
+.new-file { display: flex; gap: 0.3rem; padding: 0.2rem 0.6rem 0.4rem 1rem; }
+.new-file[hidden] { display: none; } /* setting display above would override the UA's [hidden] rule */
+.new-file input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  color: inherit;
+}
+.new-file input:focus { outline: none; border-color: var(--accent); }
+.file-status { margin: 0; padding: 0.15rem 1rem 0.5rem; font-size: 0.78rem; color: var(--muted); }
+.file-status[hidden] { display: none; }
+/* Drop target feedback: the whole left pane accepts files. */
+.pane-left.dropping .files { outline: 2px dashed var(--accent); outline-offset: -4px; background: var(--accent-soft); }
 .files summary {
   cursor: pointer;
   padding: 0.3rem 1rem;
@@ -165,13 +207,16 @@ h1 {
 .preview { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--surface); }
 .preview-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.75rem;
+  gap: 0.5rem 0.75rem;
   padding: 0.55rem 1rem;
   border-bottom: 1px solid var(--rule);
 }
-.preview-title { font-family: var(--serif); font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.preview-meta { flex: 1; color: var(--muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The file buttons (Edit/rename/archive) crowd this row. Let it wrap rather than squeeze the
+   filename to an ellipsis and the meta to nothing — the same fix .chat-head needed in M3. */
+.preview-title { flex: 1 1 auto; min-width: 9rem; font-family: var(--serif); font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-meta { flex: 1 1 100%; order: 1; color: var(--muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preview-open { font-size: 0.8rem; white-space: nowrap; }
 .preview-body { flex: 1; min-height: 0; overflow: auto; }
 .preview-body embed, .preview-body iframe { display: block; width: 100%; height: 100%; border: 0; }
@@ -179,6 +224,39 @@ h1 {
 .preview-body video { max-width: 100%; max-height: 100%; }
 .preview-body pre { margin: 0; padding: 1rem 1.25rem; font-family: var(--mono); font-size: 0.85rem; white-space: pre-wrap; }
 .preview-body .empty, .preview-body .error { padding: 1.5rem; }
+/* In-place text editor: the same surface the preview uses, so saving doesn't feel like a mode change. */
+.preview-body.kind-editor { padding: 0; }
+.editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 1.25rem 1.5rem;
+  border: 0;
+  resize: none;
+  background: var(--surface);
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  line-height: 1.6;
+  tab-size: 2;
+}
+.editor:focus { outline: none; }
+.file-rename-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--paper);
+  color: inherit;
+}
+.file-rename-input:focus { outline: none; }
+.file-rename-input[hidden] { display: none; }
 .error { color: #9b2c2c; }
 
 /* Rendered markdown (transcripts, notes, flashcards, research) — the reading surface */
