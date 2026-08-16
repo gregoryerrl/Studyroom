@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Studyroom">
+  <!-- A page of notes, in the app's accent green on paper. Deliberately a text file, not a binary
+       .ico: it stays greppable and editable, express.static already serves app/public/, and both
+       pages point at this one source rather than carrying duplicate inline data URIs.
+       Bars are 4px on a 32px canvas so they survive being drawn at 16px. -->
+  <rect width="32" height="32" rx="7" fill="#2f5d50"/>
+  <rect x="7" y="8" width="18" height="4" rx="2" fill="#faf8f3"/>
+  <rect x="7" y="15" width="18" height="4" rx="2" fill="#faf8f3"/>
+  <rect x="7" y="22" width="11" height="4" rx="2" fill="#faf8f3"/>
+</svg>
