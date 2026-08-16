@@ -307,20 +307,73 @@ const chatCache = new Map(); // chatId → { messages: [], loaded, busy, control
 const api = (p, opts) => fetch(`/api/subjects/${encodeURIComponent(subject)}${p}`, opts);
 const jsonOpts = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) });
 
+const emptyCache = () => ({ messages: [], loaded: false, busy: false, controller: null, stream: null });
+
+/**
+ * The cache for a chat — but NEVER minting one for a chat that isn't in the list. A bucket keyed on
+ * a chat that doesn't exist accepts a typed message nothing can send, and repaints #chat-log over
+ * whatever error put us in that state. Membership is the test, not `id == null`: a stale id outlives
+ * `chats` being emptied (deleteChat filters the list, then awaits newChat, which can throw), so a
+ * null check alone would leave the same bug reachable through the second door.
+ */
 function getCache(id) {
-  if (!chatCache.has(id)) chatCache.set(id, { messages: [], loaded: false, busy: false, controller: null, stream: null });
+  if (!chats.some((c) => c.id === id)) return emptyCache();
+  if (!chatCache.has(id)) chatCache.set(id, emptyCache());
   return chatCache.get(id);
 }
 const activeChat = () => chats.find((c) => c.id === activeChatId) ?? null;
+
+/**
+ * Report a chat-side failure: into the open chat's log when there is one, else as a banner in the
+ * log area carrying a Retry — with no chat to attach a message to, the pane would otherwise sit
+ * blank. Retry is a button, per the house rule: show the error, press the button again.
+ */
+function chatFailure(message, { retry = null } = {}) {
+  const chat = activeChat();
+  if (chat) {
+    getCache(chat.id).messages.push({ kind: "error", text: message });
+    renderLog(true);
+    return;
+  }
+  const log = $("#chat-log");
+  log.replaceChildren();
+  const banner = document.createElement("p");
+  banner.className = "error chat-banner";
+  banner.textContent = message;
+  if (retry) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn small";
+    btn.textContent = "Retry";
+    btn.addEventListener("click", () => {
+      log.innerHTML = `<p class="empty">Loading…</p>`;
+      retry();
+    });
+    banner.append(" ", btn);
+  }
+  log.append(banner);
+  updateComposer(); // the controls must show as unavailable, not merely fail when pressed
+}
+
+/**
+ * Catch a floating chat operation so its failure lands in the pane instead of the console. Only for
+ * the handlers that had nothing: openChat and setChatConfig already report, and setChatConfig also
+ * reverts its dropdown — which a generic catch cannot do, so it is deliberately not wrapped.
+ */
+const chatGuard = (p, { retry = null, prefix = "Something went wrong" } = {}) =>
+  p.catch((err) => chatFailure(`${prefix}: ${err.message}`, { retry }));
 const chatTitle = (c) => c.title || "New chat";
 
 async function loadChats() {
-  const res = await api("/chats");
+  const res = await send(`/api/subjects/${encodeURIComponent(subject)}/chats`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   chats = await res.json();
   if (chats.length === 0) {
-    const created = await (await api("/chats", jsonOpts("POST", {}))).json();
-    chats = [created];
+    // This second call needs its own ok check: on a 500 the body is HTML, so .json() would throw a
+    // parse error and the banner would read "Unexpected token '<'" instead of what went wrong.
+    const made = await send(`/api/subjects/${encodeURIComponent(subject)}/chats`, jsonOpts("POST", {}));
+    if (!made.ok) throw new Error(`HTTP ${made.status}`);
+    chats = [await made.json()];
   }
   const wanted = new URLSearchParams(location.search).get("chat");
   const target = chats.find((c) => c.id === wanted) ?? chats[0];
@@ -367,6 +420,9 @@ function renderLog(jump = false) {
   renderQueued = true;
   requestAnimationFrame(() => {
     renderQueued = false;
+    // With no resolvable chat there is nothing to paint, and #chat-log may be holding the failure
+    // banner — repainting it from an empty cache is what used to wipe the error off the screen.
+    if (!activeChat()) return;
     const log = $("#chat-log");
     const nearBottom = jump || log.scrollHeight - log.scrollTop - log.clientHeight < 80;
     const cache = getCache(activeChatId);
@@ -399,14 +455,18 @@ function renderMessage(m) {
 
 function updateComposer() {
   const cache = getCache(activeChatId);
+  const noChat = !activeChat();
   $("#chat-send").hidden = cache.busy;
+  $("#chat-send").disabled = noChat;
+  $("#composer-input").disabled = noChat;
   $("#chat-cancel").hidden = !cache.busy;
   $("#chat-status").textContent = cache.busy ? "Claude is working…" : "";
-  $("#chat-delete").disabled = cache.busy;
+  $("#chat-delete").disabled = cache.busy || noChat;
+  $("#chat-rename").disabled = noChat;
   // Changing model/effort cannot affect a turn already in flight, so offering it mid-turn
   // would be a lie about what the running turn is doing.
-  $("#chat-model").disabled = cache.busy;
-  $("#chat-effort").disabled = cache.busy;
+  $("#chat-model").disabled = cache.busy || noChat;
+  $("#chat-effort").disabled = cache.busy || noChat;
   updateActionContext(); // covers openChat/sendMessage/finishStream, which all call this
 }
 
@@ -439,6 +499,10 @@ async function setChatConfig(field, value) {
 
 // ---- sending / streaming ----
 async function sendMessage(text) {
+  // Backstop behind the disabled composer. Keyed on activeChat(), not activeChatId: the id can be
+  // non-null while resolving to nothing (a delete whose replacement never arrived), and that state
+  // is exactly where a typed message used to vanish into a bucket nothing could send.
+  if (!activeChat()) return;
   const id = activeChatId;
   const cache = getCache(id);
   if (cache.busy || !text.trim()) return;
@@ -552,8 +616,8 @@ function bumpChat(id, firstMessage) {
 
 // ---- chat management ----
 async function newChat(focus = null) {
-  const res = await api("/chats", jsonOpts("POST", focus ? { focus } : {}));
-  if (!res.ok) { alert(`Could not create chat (HTTP ${res.status})`); return; }
+  const res = await send(`/api/subjects/${encodeURIComponent(subject)}/chats`, jsonOpts("POST", focus ? { focus } : {}));
+  if (!res.ok) { chatFailure(`Could not create chat (HTTP ${res.status})`); return; }
   const chat = await res.json();
   chats.unshift(chat);
   await openChat(chat.id);
@@ -563,10 +627,12 @@ async function deleteChat() {
   const chat = activeChat();
   if (!chat || getCache(chat.id).busy) return;
   if (!confirm(`Delete "${chatTitle(chat)}"? Its history moves to the archive folder.`)) return;
-  const res = await api(`/chats/${chat.id}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 204) { alert(`Could not delete (HTTP ${res.status})`); return; }
+  const res = await send(`/api/subjects/${encodeURIComponent(subject)}/chats/${chat.id}`, { method: "DELETE" });
+  if (!res.ok) { chatFailure(`Could not delete (HTTP ${res.status})`); return; }
   chats = chats.filter((c) => c.id !== chat.id);
   chatCache.delete(chat.id);
+  activeChatId = null; // cleared BEFORE the await: if the replacement never arrives, the guards must
+                       // see "no chat" rather than an id pointing at something already deleted
   if (chats.length === 0) await newChat();
   else await openChat(chats[0].id);
 }
@@ -581,8 +647,9 @@ function startRename() {
     input.hidden = true; sel.hidden = false;
     const title = input.value.replace(/\s+/g, " ").trim();
     if (save && title && title !== chat.title) {
-      const res = await api(`/chats/${chat.id}`, jsonOpts("PATCH", { title }));
+      const res = await send(`/api/subjects/${encodeURIComponent(subject)}/chats/${chat.id}`, jsonOpts("PATCH", { title }));
       if (res.ok) chat.title = title;
+      else chatFailure(`Could not rename (HTTP ${res.status})`);
       renderSwitcher();
     }
   };
@@ -819,11 +886,13 @@ function sendAction({ kind, want, file }, value) {
 /** Context line + button availability. Called from select() and from updateComposer(). */
 function updateActionContext() {
   const file = actionContextFile();
-  const busy = activeChatId ? getCache(activeChatId).busy : false;
+  const noChat = !activeChat();
+  const busy = noChat ? false : getCache(activeChatId).busy;
   $("#action-context").textContent = file ? `Context: ${file.name}` : "Select a file on the left, or type a topic";
   for (const btn of document.querySelectorAll("[data-action]")) {
     const a = ACTIONS[btn.dataset.action];
-    btn.disabled = busy || (a?.needs === "file" && !file);
+    // Without a chat these can only no-op, so they must not look pressable.
+    btn.disabled = busy || noChat || (a?.needs === "file" && !file);
   }
   // Close an open row when the turn starts, or when the context file changed under it — its label
   // described the old context, so leaving it open would invite typing an answer to a stale question.
@@ -1130,9 +1199,11 @@ addEventListener("beforeunload", (e) => {
 });
 
 $("#chat-switcher").addEventListener("change", (e) => openChat(e.target.value));
-$("#chat-new").addEventListener("click", () => newChat());
+// openChat and setChatConfig handle their own failures (setChatConfig reverts the dropdown, which a
+// generic catch could not do), so only these three are wrapped.
+$("#chat-new").addEventListener("click", () => chatGuard(newChat(), { prefix: "Could not create chat" }));
 $("#chat-rename").addEventListener("click", startRename);
-$("#chat-delete").addEventListener("click", deleteChat);
+$("#chat-delete").addEventListener("click", () => chatGuard(deleteChat(), { prefix: "Could not delete chat" }));
 $("#chat-cancel").addEventListener("click", cancelTurn);
 $("#chat-model").addEventListener("change", (e) => setChatConfig("model", e.target.value));
 $("#chat-effort").addEventListener("change", (e) => setChatConfig("effort", e.target.value));
@@ -1170,6 +1241,5 @@ $("#composer-input").addEventListener("keydown", (e) => {
   }
 });
 
-loadChats().catch((err) => {
-  $("#chat-log").innerHTML = `<p class="error">Could not load chats: ${esc(err.message)}</p>`;
-});
+const bootChats = () => chatGuard(loadChats(), { retry: bootChats, prefix: "Could not load chats" });
+bootChats();
