@@ -47,6 +47,7 @@ function renderList(list, mount, stripPrefix) {
     <button class="file${entry.path === selectedPath ? " active" : ""}" data-path="${esc(entry.path)}" title="${esc(entry.path)}">
       <span class="glyph">${GLYPH[entry.type] || GLYPH.other}</span>
       <span class="fname">${esc(label)}</span>
+      ${entry.type === "video" && !hasTranscript(entry) ? '<span class="badge">no transcript</span>' : ""}
       <span class="fsize">${fmtSize(entry.size)}</span>
     </button>`).join("");
   const html = [];
@@ -121,6 +122,8 @@ async function renderPreview(entry) {
   open.href = url;
   open.hidden = false;
   $("#focus-chat").hidden = false;
+  // Transcribe is offered for videos only, and only when this one isn't already transcribed.
+  $("#transcribe").hidden = entry.type !== "video" || hasTranscript(entry);
   body.className = `preview-body kind-${entry.type}`;
 
   switch (entry.type) {
@@ -470,6 +473,97 @@ function startRename() {
   input.onblur = () => finish(true);
 }
 
+// ---- transcription (design doc §6.5) ----
+
+const transcriptPath = (videoEntry) => `_generated/transcripts/${videoEntry.name.replace(/\.[^.]+$/, "")}.md`;
+/** Does this video already have a transcript in the current listing? Drives the button + badge. */
+function hasTranscript(entry) {
+  if (entry.type !== "video") return false;
+  const want = transcriptPath(entry);
+  return entries.some((e) => e.path === want);
+}
+
+let txController = null; // AbortController while a transcription streams
+
+function showTxRow(on) {
+  $("#tx-row").hidden = !on;
+  $("#transcribe").disabled = on;
+  if (!on) {
+    $("#tx-pct").textContent = "";
+    $("#tx-line").textContent = "";
+    $("#tx-bar").removeAttribute("value");
+  }
+}
+
+async function startTranscribe(entry) {
+  if (txController) return;
+  const bar = $("#tx-bar");
+  showTxRow(true);
+  bar.removeAttribute("value"); // valueless <progress> renders as an indeterminate bar
+  $("#tx-pct").textContent = "starting…";
+  txController = new AbortController();
+  try {
+    const res = await api("/transcribe", { ...jsonOpts("POST", { file: entry.path }), signal: txController.signal });
+    if (!res.ok) {
+      const msg = (await res.json().catch(() => ({}))).error || `HTTP ${res.status}`;
+      $("#tx-pct").textContent = "";
+      $("#tx-line").textContent = msg;
+      $("#transcribe").disabled = false;
+      return;
+    }
+    // Idempotent short-circuit: an existing transcript comes back as plain JSON, not a stream.
+    if ((res.headers.get("content-type") || "").includes("application/json")) {
+      await res.json();
+      showTxRow(false);
+      await loadFiles().catch(() => {});
+      return;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        let ev;
+        try { ev = JSON.parse(line); } catch { continue; }
+        if (ev.kind === "progress") {
+          // pct is null when ffprobe couldn't give a duration — leave the bar indeterminate
+          // rather than inventing a number.
+          if (typeof ev.pct === "number") bar.value = ev.pct; else bar.removeAttribute("value");
+          $("#tx-pct").textContent = typeof ev.pct === "number" ? `${ev.pct}% · ${ev.at ?? ""}` : (ev.at ?? "working…");
+          $("#tx-line").textContent = ev.text ?? "";
+        } else if (ev.kind === "done") {
+          bar.value = 100; // completion comes from the process exiting, not from pct: Whisper
+          $("#tx-pct").textContent = "100%"; // stops emitting during the silent tail (~60s on L2)
+          showTxRow(false);
+          await loadFiles().catch(() => {});
+          const made = entries.find((e) => e.path === ev.path);
+          if (made) select(made);
+          return;
+        } else if (ev.kind === "error") {
+          $("#tx-pct").textContent = "";
+          $("#tx-line").textContent = ev.text || "Transcription failed.";
+          $("#transcribe").disabled = false;
+          bar.removeAttribute("value");
+          return;
+        }
+      }
+    }
+    showTxRow(false);
+  } catch (err) {
+    $("#tx-line").textContent = err.name === "AbortError" ? "Cancelled." : `Transcription failed: ${err.message}`;
+    $("#transcribe").disabled = false;
+  } finally {
+    txController = null;
+  }
+}
+
 // ---- study actions (design doc §7.2) ----
 
 /** Local date, not toISOString() — at UTC+8 that would stamp yesterday on every evening file. */
@@ -628,6 +722,11 @@ $("#chat-cancel").addEventListener("click", cancelTurn);
 $("#chat-model").addEventListener("change", (e) => setChatConfig("model", e.target.value));
 $("#chat-effort").addEventListener("change", (e) => setChatConfig("effort", e.target.value));
 $("#focus-chat").addEventListener("click", () => { if (selectedPath) newChat(selectedPath); });
+$("#transcribe").addEventListener("click", () => {
+  const entry = entries.find((e) => e.path === selectedPath);
+  if (entry) startTranscribe(entry);
+});
+$("#tx-cancel").addEventListener("click", () => txController?.abort());
 $("#composer").addEventListener("submit", (e) => {
   e.preventDefault();
   const input = $("#composer-input");

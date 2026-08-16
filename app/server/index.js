@@ -6,6 +6,7 @@ import { listSubjects, subjectDir, listFiles } from "./subjects.js";
 import * as store from "./store.js";
 import { buildSystemPrompt, defaultTitle } from "./prompts.js";
 import { runTurn, toolLabel } from "./claude.js";
+import { transcribe, findStrayJob } from "./transcribe.js";
 
 const HERE = import.meta.dirname;
 const ROOT = path.resolve(process.env.STUDYROOM_DIR || path.join(HERE, "..", ".."));
@@ -268,6 +269,68 @@ app.post("/api/subjects/:s/chats/:id/messages", async (req, res) => {
   };
   busy.set(chat.id, { cancel });
   if (clientGone) cancel(); // the browser went away while we were preparing the prompt
+});
+
+// ---------- transcription (§6.5) ----------
+
+// ONE job at a time GLOBALLY — it saturates the GPU/ANE. Deliberately NOT the per-chat `busy`
+// map above: that is keyed by chat and this lock spans every subject.
+let transcribing = null; // { cancel(), file } while a job runs
+
+app.post("/api/subjects/:s/transcribe", async (req, res) => {
+  const dir = await requireSubject(req, res);
+  if (!dir) return;
+  const { file, force = false, language = null, translate = false } = req.body ?? {};
+
+  // The path is client-supplied and we are about to exec a subprocess on it, so it must be a
+  // MEMBER of the listing rather than a path we join. That is containment by construction:
+  // walk() skips dotfiles (subjects.js:78) and only emits Dirent.isFile() entries (:84), which is
+  // false for symlinks — so nothing outside the subject dir can appear here to be chosen.
+  const { materials } = await listFiles(dir);
+  const entry = materials.find((m) => m.path === file);
+  if (!entry) return res.status(404).json({ error: "no such file in this subject" });
+  if (entry.type !== "video") return res.status(400).json({ error: "only video files can be transcribed" });
+
+  const stem = entry.name.replace(/\.[^.]+$/, "");
+  const rel = path.posix.join("_generated", "transcripts", `${stem}.md`);
+  if (!force) {
+    const existing = await fs.stat(path.join(dir, rel)).then(() => true).catch(() => false);
+    if (existing) return res.json({ kind: "done", path: rel, skipped: true });
+  }
+
+  if (transcribing) return res.status(409).json({ error: `already transcribing ${transcribing.file} — wait or cancel it` });
+  const stray = await findStrayJob();
+  if (stray) return res.status(409).json({ error: `a transcription (pid ${stray}) is already running outside this server — wait for it or stop it` });
+  transcribing = { file, cancel() {} }; // reserve before any await below
+
+  res.writeHead(200, {
+    "Content-Type": "application/x-ndjson; charset=utf-8",
+    "Cache-Control": "no-cache",
+    "X-Accel-Buffering": "no",
+  });
+  const send = (obj) => {
+    if (!res.writableEnded) res.write(`${JSON.stringify(obj)}\n`);
+  };
+  let done = false;
+  const settle = (obj) => {
+    if (done) return;
+    done = true;
+    transcribing = null;
+    send(obj);
+    if (!res.writableEnded) res.end();
+  };
+
+  const job = transcribe(
+    { subjectDir: dir, relPath: file, language, translate },
+    {
+      progress: (p) => send({ kind: "progress", ...p }),
+      done: ({ path: outPath }) => settle({ kind: "done", path: outPath }),
+      error: ({ message }) => settle({ kind: "error", text: message }),
+    },
+  );
+  transcribing = { file, cancel: job.cancel };
+  // 'res' close, not 'req' — req fires as soon as the body is read on Node >= 16.
+  res.on("close", () => { if (!done) job.cancel(); });
 });
 
 app.listen(PORT, HOST, () => {

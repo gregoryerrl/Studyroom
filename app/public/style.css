@@ -293,6 +293,38 @@ h1 {
 .msg.tool { color: var(--muted); font-family: var(--mono); font-size: 0.75rem; padding: 0 0.25rem; }
 .msg.tool::before { content: "⚙ "; }
 .msg.error-bubble { color: #9b2c2c; background: #fbf1f1; border: 1px solid #ecc8c8; border-radius: 6px; padding: 0.45rem 0.7rem; font-size: 0.85rem; white-space: pre-wrap; }
+/* Transcription (§6.5) */
+.transcribe-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.9rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+}
+.transcribe-row[hidden] { display: none; } /* setting display would override the [hidden] default */
+#tx-bar { width: 9rem; height: 0.55rem; }
+.tx-pct { color: var(--muted); font-size: 0.75rem; white-space: nowrap; min-width: 5.5rem; }
+.tx-line {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.badge {
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0 0.25rem;
+  white-space: nowrap;
+}
+
 .chat-config {
   font: inherit;
   font-size: 0.72rem;

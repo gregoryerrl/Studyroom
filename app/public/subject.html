@@ -26,8 +26,15 @@
         <div class="preview-bar">
           <span id="preview-title" class="preview-title">Preview</span>
           <span id="preview-meta" class="preview-meta"></span>
+          <button type="button" id="transcribe" class="btn small" hidden title="Transcribe this lecture with local Whisper — one job at a time, takes a fraction of the video's length">Transcribe</button>
           <button type="button" id="focus-chat" class="btn small" hidden title="Start a chat dedicated to this file">New focused chat</button>
           <a id="preview-open" class="preview-open" href="#" target="_blank" rel="noopener" hidden>Open in new tab ↗</a>
+        </div>
+        <div id="tx-row" class="transcribe-row" hidden>
+          <progress id="tx-bar" max="100"></progress>
+          <span id="tx-pct" class="tx-pct"></span>
+          <span id="tx-line" class="tx-line"></span>
+          <button type="button" id="tx-cancel" class="btn small danger">Cancel</button>
         </div>
         <div id="preview" class="preview-body">
           <p class="empty">Pick a file on the left — PDFs, lecture videos, notes and generated study kits all preview here.</p>
