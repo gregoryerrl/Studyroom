@@ -123,9 +123,109 @@ function sanitize(html) {
   return doc.body;
 }
 
+// ---- flashcard decks (design doc §9, M5) ----
+
+// A deck is detected by CONTENT, not filename: the digest kit's deck is a plain "flashcards.md",
+// and a deck Gregory writes by hand should work too.
+const Q_LINE = /^Q:\s?/;
+const A_LINE = /^A:\s?/;
+
+/**
+ * Parse Q:/A: markdown into { preamble, cards: [{q, a}] }, or null if this is not a deck.
+ *
+ * Line-anchored: a naive split on "Q:" would shatter any answer that merely mentions it.
+ * Detection requires at least two PAIRED cards — a card whose answer is empty does not count
+ * toward the gate. The looser "two Q: lines" rule was measured only against Claude-generated
+ * decks, but the app now lets Gregory write his own notes, and a note jotting "Q:" twice as
+ * shorthand for open questions would be silently replaced by a card list with its body hidden.
+ * (Unpaired cards still RENDER, with an empty answer — a half-written deck should show.)
+ */
+function parseDeck(text) {
+  const lines = String(text).split("\n");
+  const starts = lines.reduce((acc, line, i) => (Q_LINE.test(line) ? [...acc, i] : acc), []);
+  if (starts.length === 0) return null;
+  const cards = starts.map((start, n) => {
+    const end = starts[n + 1] ?? lines.length;
+    const block = lines.slice(start, end);
+    const split = block.findIndex((line, i) => i > 0 && A_LINE.test(line));
+    const qLines = split < 0 ? block : block.slice(0, split);
+    const aLines = split < 0 ? [] : block.slice(split);
+    return {
+      q: [qLines[0].replace(Q_LINE, ""), ...qLines.slice(1)].join("\n").trim(),
+      a: aLines.length ? [aLines[0].replace(A_LINE, ""), ...aLines.slice(1)].join("\n").trim() : "",
+    };
+  });
+  if (cards.filter((c) => c.q && c.a).length < 2) return null;
+  return { preamble: lines.slice(0, starts[0]).join("\n").trim(), cards };
+}
+
+/** Render a parsed deck into `body` as click-to-reveal cards. No scheduling logic (§9, M5). */
+function renderDeck(deck, body) {
+  const wrap = document.createElement("div");
+  wrap.className = "deck";
+
+  const head = document.createElement("div");
+  head.className = "deck-head";
+  if (deck.preamble) {
+    const intro = document.createElement("div");
+    intro.className = "deck-intro prose";
+    intro.append(...sanitize(marked.parse(deck.preamble)).childNodes);
+    head.append(intro);
+  }
+  const bar = document.createElement("div");
+  bar.className = "deck-bar";
+  const count = document.createElement("span");
+  count.className = "deck-count";
+  // The PARSED count, never the header's: the eigenvalues deck says "(22 cards)" and holds 24.
+  count.textContent = `${deck.cards.length} card${deck.cards.length === 1 ? "" : "s"}`;
+  const revealAll = document.createElement("button");
+  revealAll.type = "button";
+  revealAll.className = "btn small";
+  revealAll.textContent = "Reveal all";
+  bar.append(count, revealAll);
+  head.append(bar);
+
+  const list = document.createElement("ol");
+  list.className = "cards";
+  for (const card of deck.cards) {
+    const li = document.createElement("li");
+    li.className = "card";
+    const q = document.createElement("button");
+    q.type = "button";
+    q.className = "card-q";
+    q.setAttribute("aria-expanded", "false");
+    // parseInline, not parse: marked.parse() wraps in <p>, and a <p> inside a <button> is invalid.
+    q.append(...sanitize(marked.parseInline(card.q)).childNodes);
+    const a = document.createElement("div");
+    a.className = "card-a prose";
+    a.hidden = true;
+    a.append(...sanitize(marked.parse(card.a || "_(no answer in the file)_")).childNodes);
+    q.addEventListener("click", () => {
+      a.hidden = !a.hidden;
+      q.setAttribute("aria-expanded", String(!a.hidden));
+    });
+    li.append(q, a);
+    list.append(li);
+  }
+
+  revealAll.addEventListener("click", () => {
+    const reveal = revealAll.textContent === "Reveal all";
+    for (const a of list.querySelectorAll(".card-a")) a.hidden = !reveal;
+    for (const q of list.querySelectorAll(".card-q")) q.setAttribute("aria-expanded", String(reveal));
+    revealAll.textContent = reveal ? "Hide all" : "Reveal all";
+  });
+
+  wrap.append(head, list);
+  body.replaceChildren(wrap);
+}
+
+let currentDeck = null; // parsed deck for the previewed file, or null — set only after the fetch
+let showCards = true;   // deck view vs raw markdown; one flag, persists across file selections
+
 async function renderPreview(entry) {
   const body = $("#preview");
   const url = fileUrl(entry.path);
+  currentDeck = null; // deck-ness is unknowable until the text arrives; assume not until proven
   $("#preview-title").textContent = entry.name;
   $("#preview-meta").textContent = `${fmtSize(entry.size)} · ${entry.path}`;
   const open = $("#preview-open");
@@ -156,10 +256,16 @@ async function renderPreview(entry) {
         text = await res.text();
       } catch (err) {
         body.innerHTML = `<p class="error">Could not load file: ${esc(err.message)}</p>`;
-        return;
+        syncFileButtons(entry); // this path skips the call at the end — without it the PREVIOUS
+        return;                 // file's Cards toggle stays live above an error message
       }
-      if (selectedPath !== entry.path) return; // user already moved on
+      if (selectedPath !== entry.path) return; // user already moved on; the newer render owns the UI
       if (entry.type === "markdown") {
+        currentDeck = parseDeck(text);
+        if (currentDeck && showCards) {
+          renderDeck(currentDeck, body);
+          break;
+        }
         const article = document.createElement("article");
         article.className = "prose";
         article.append(...sanitize(marked.parse(text)).childNodes);
@@ -774,6 +880,12 @@ const refreshFiles = () => loadFiles().catch((err) => console.warn("file list re
 /** Which preview-bar buttons apply right now. Called at the end of every renderPreview(). */
 function syncFileButtons(entry) {
   const open = Boolean(editing);
+  // Deck-ness is not a property of `entry` (a listing row carries no text), so this reads the
+  // module-level currentDeck that the markdown branch publishes after its fetch.
+  const cards = $("#cards-toggle");
+  cards.hidden = open || !currentDeck;
+  cards.textContent = showCards ? "Markdown" : "Cards";
+  cards.title = showCards ? "Show the raw markdown instead" : "Show these Q:/A: pairs as cards";
   $("#file-edit").hidden = open || !entry || !EDITABLE.has(entry.type);
   $("#file-save").hidden = !open;
   $("#file-edit-cancel").hidden = !open;
@@ -980,6 +1092,11 @@ $("#file-edit-cancel").addEventListener("click", () => {
   const entry = entries.find((e) => e.path === path);
   if (entry) renderPreview(entry);
   fileStatus("");
+});
+$("#cards-toggle").addEventListener("click", () => {
+  showCards = !showCards;
+  const entry = entries.find((e) => e.path === selectedPath);
+  if (entry) renderPreview(entry);
 });
 $("#file-rename").addEventListener("click", startFileRename);
 $("#file-delete").addEventListener("click", () => guard(deleteFile()));

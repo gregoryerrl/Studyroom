@@ -310,6 +310,8 @@ Bind to `127.0.0.1:4321` only. **Path safety differs between read and write:** t
 *Accept:* (1) transcribing `AI201/Lecture_1_What_is_AI.mp4` — **deliberately left untranscribed as this test's material** — produces `_generated/transcripts/Lecture_1_What_is_AI.md` with `[HH:MM:SS]` markers and no repeated-segment tail; (2) requesting Lecture_2 *without* `force` returns the existing transcript path immediately (proves idempotence); (3) asking an AI201 chat "what did Lecture 1 cover? quote it with timestamps" gets an answer quoting the new transcript; (4) starting a second transcription while one runs returns 409.
 
 **M5 (optional polish) — Flashcard renderer.** Parse `Q:/A:` markdown into click-to-reveal cards on the subject page. No scheduling logic.
+*Built 2026-08-16.* Detection is by **content, not filename** — a file is a deck when it holds ≥2 line-anchored `Q:` blocks that each have a non-empty `A:`. A detected deck opens as cards with a preview-bar toggle back to the raw markdown; the card count shown is the parsed one, not whatever the file's own header claims. Frontend-only: no server change, no route, no dependency.
+*Accept:* (1) `flashcards-eigenvalues-2026-08-15.md` renders 24 cards (its header says 22) and the digest kit's `flashcards.md` renders 26; (2) every answer measures **zero height** before any click — assert geometry, not `el.hidden`; (3) clicking a question reveals its answer and flips `aria-expanded`; (4) `notes.md`, `quiz.md`, `worked-examples.md`, a research note, both transcripts, `visual.html`, **and a hand-written note that merely uses `Q:` twice as shorthand** all still render normally with the toggle hidden.
 
 ## 10. Kicking this off with bot-hq
 

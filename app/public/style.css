@@ -229,6 +229,45 @@ h1 {
 .preview-body video { max-width: 100%; max-height: 100%; }
 .preview-body pre { margin: 0; padding: 1rem 1.25rem; font-family: var(--mono); font-size: 0.85rem; white-space: pre-wrap; }
 .preview-body .empty, .preview-body .error { padding: 1.5rem; }
+/* Flashcard deck (§9, M5): click-to-reveal, no scheduling logic — so no flip animation, no
+   progress, no review buttons. Just the question, and the answer when you ask for it. */
+.deck { padding: 1.5rem 2rem 3rem; max-width: 72ch; }
+.deck-intro { padding: 0; max-width: none; }
+.deck-intro h1 { margin-top: 0; }
+.deck-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.25rem 0 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--rule);
+}
+.deck-count { flex: 1; color: var(--muted); font-size: 0.85rem; }
+.cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+.card { background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+.card-q {
+  display: block;
+  width: 100%;
+  padding: 0.85rem 1.1rem;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-family: var(--serif);
+  font-size: 1.02rem;
+  line-height: 1.5;
+  color: inherit;
+  cursor: pointer;
+}
+.card-q:hover { background: #f1eee6; }
+.card-q::before { content: "?"; float: right; margin-left: 0.75rem; color: var(--rule); font-weight: 700; }
+.card-q[aria-expanded="true"] { background: var(--accent-soft); }
+.card-q[aria-expanded="true"]::before { content: "−"; color: var(--accent); }
+.card-a { padding: 0.2rem 1.1rem 1rem; max-width: none; border-top: 1px solid var(--rule); font-size: 0.97rem; }
+/* Required: .card-a sets `padding`/`display`-affecting properties, and ANY explicit display would
+   override the UA's [hidden] { display: none } — every answer would render revealed and the deck
+   would be inert while looking built. Five other rules in this file exist for the same reason. */
+.card-a[hidden] { display: none; }
+
 /* In-place text editor: the same surface the preview uses, so saving doesn't feel like a mode change. */
 .preview-body.kind-editor { padding: 0; }
 .editor {
