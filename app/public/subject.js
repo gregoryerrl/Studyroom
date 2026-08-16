@@ -43,13 +43,22 @@ function renderList(list, mount, stripPrefix) {
     if (!groups.has(folder)) groups.set(folder, []);
     groups.get(folder).push({ entry, label });
   }
-  const rows = (items) => items.map(({ entry, label }) => `
+  // The trailing cell carries EITHER the badge or the size, never both. In a 260px pane the badge
+  // is 94px, so competing for the same row left the filename 32px — "Le…". On a video with no
+  // transcript the badge is the more actionable of the two, and the exact size is still one click
+  // away in the preview bar.
+  const rows = (items) => items.map(({ entry, label }) => {
+    const needsTranscript = entry.type === "video" && !hasTranscript(entry);
+    const trailing = needsTranscript
+      ? '<span class="badge" title="No transcript yet — select this video and press Transcribe">no transcript</span>'
+      : `<span class="fsize">${fmtSize(entry.size)}</span>`;
+    return `
     <button class="file${entry.path === selectedPath ? " active" : ""}" data-path="${esc(entry.path)}" title="${esc(entry.path)}">
       <span class="glyph">${GLYPH[entry.type] || GLYPH.other}</span>
       <span class="fname">${esc(label)}</span>
-      ${entry.type === "video" && !hasTranscript(entry) ? '<span class="badge">no transcript</span>' : ""}
-      <span class="fsize">${fmtSize(entry.size)}</span>
-    </button>`).join("");
+      ${trailing}
+    </button>`;
+  }).join("");
   const html = [];
   if (groups.has("")) html.push(rows(groups.get("")));       // root-level files first
   for (const [folder, items] of groups) {
@@ -791,21 +800,38 @@ async function uploadFiles(fileList) {
   const files = [...fileList];
   if (files.length === 0) return;
   const failed = [];
+  const kept = [];
+  let ok = 0;
   for (const [i, file] of files.entries()) {
     fileStatus(`Uploading ${file.name} (${i + 1}/${files.length})…`);
     // The raw File IS the body — no multipart, and the browser streams it, so a 350 MB lecture
     // never lands in memory on either end. One file's failure must not abandon the rest of the drop.
     try {
-      const res = await send(fileApi(file.name), { method: "PUT", body: file });
-      if (!res.ok) failed.push(`${file.name}: ${await errorText(res)}`);
+      let res = await send(fileApi(file.name), { method: "PUT", body: file });
+      // Dropping a corrected copy of a handout you already have is an ordinary thing to do, and
+      // "archive the old one first" is a silly detour — so offer the replacement here. Keyed on
+      // `code`, because the other 409 on this route means the file is mid-transcription.
+      if (res.status === 409 && (await res.clone().json().catch(() => ({}))).code === "exists") {
+        if (!confirm(`"${file.name}" is already in ${subject}.\n\nReplace it with the file you just dropped? The current one is not kept.`)) {
+          kept.push(file.name);
+          continue;
+        }
+        res = await send(fileApi(file.name, "?overwrite=1"), { method: "PUT", body: file });
+      }
+      if (res.ok) ok += 1;
+      else failed.push(`${file.name}: ${await errorText(res)}`);
     } catch (err) {
       failed.push(`${file.name}: ${err.message}`);
     }
   }
   await refreshFiles();
-  const ok = files.length - failed.length;
-  if (failed.length) fileStatus(failed.join(" · "), true);
-  else fileStatus(`Uploaded ${ok} file${ok === 1 ? "" : "s"}.`);
+  // Report every outcome: a 4-file drop with 3 uploads and 1 duplicate used to show only the error,
+  // so the three that landed looked like they hadn't.
+  const parts = [];
+  if (ok) parts.push(`Uploaded ${ok} file${ok === 1 ? "" : "s"}.`);
+  if (kept.length) parts.push(`kept the existing ${kept.join(", ")}`);
+  parts.push(...failed);
+  fileStatus(parts.join(" · "), failed.length > 0);
 }
 
 async function createFile(rawName) {

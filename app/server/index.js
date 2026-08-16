@@ -118,7 +118,9 @@ app.put("/api/subjects/:s/files/*path", async (req, res) => {
 
   const existed = await isFile(target.abs);
   if (existed && req.query.overwrite !== "1") {
-    return res.status(409).json({ error: "a file with that name already exists" });
+    // `code` so the client can tell THIS 409 from the transcribe-conflict one above and offer to
+    // replace — matching on the message text would break the moment the wording changes.
+    return res.status(409).json({ error: "a file with that name already exists", code: "exists" });
   }
 
   // Atomic: stream into a dotfile temp beside the target, rename on success. The dotfile is hidden

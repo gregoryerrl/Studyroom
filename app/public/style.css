@@ -199,6 +199,11 @@ h1 {
   min-width: 2.6rem;
   text-align: center;
 }
+/* Exactly three children, always: glyph | name | badge-or-size. The badge used to be a FOURTH
+   child of this three-track grid, so auto-placement pushed it and the size onto an implicit second
+   row — and since every freshly uploaded lecture starts without a transcript, that broken row was
+   the normal look of a new video. Adding a fourth track instead would leave a doubled gap on the
+   many rows with no badge, because an empty auto track still gets its gap. */
 .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fsize { color: var(--muted); font-size: 0.78rem; }
 .files .empty { padding: 0.25rem 1rem; font-size: 0.85rem; }
