@@ -10,6 +10,11 @@
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Pane sizes: the drag handles write these, and subject.js restores them from localStorage.
+     Defaults are M1's original fixed tracks, so an unresized window looks exactly as before. */
+  --files-w: 260px;
+  --chat-w: 400px;
+  --companion-h: 320px;
 }
 
 * { box-sizing: border-box; }
@@ -106,27 +111,57 @@ h1 {
 .subject-page { overflow: hidden; }
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 400px;
+  grid-template-columns: minmax(0, 1fr) 6px var(--chat-w);
   height: calc(100vh - 3rem);
 }
 .pane-left {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: var(--files-w) 6px minmax(0, 1fr);
   min-width: 0;
   /* Grid and flex items default to min-height:auto, so a tall preview (a long rendered transcript
      is ~18000px) stretches the workspace row and drags the chat pane down with it, pushing the
      actions bar and composer far below the viewport. min-height:0 lets these panes shrink to the
      row and scroll internally instead. */
   min-height: 0;
-  border-right: 1px solid var(--rule);
 }
+
+/* Drag handles. Each one sits in its parent's track/flow and drags the CSS variable that sizes the
+   pane before it — the panes themselves keep every min-height:0 / minmax(0,1fr) property above.
+   The 6px strip is the hit area; the visible seam is the 1px ::before line, which is exactly the
+   border the panes used to draw themselves. */
+.gutter {
+  position: relative;
+  background: var(--paper);
+  cursor: col-resize;
+  touch-action: none; /* or a trackpad/touch drag scrolls the page instead of resizing */
+}
+.gutter[hidden] { display: none; } /* explicit: the rules above set background/position, and any
+                                      display would override the UA's [hidden] rule */
+.gutter::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--rule);
+}
+.gutter:hover::before, .gutter.dragging::before, .gutter:focus-visible::before { width: 3px; background: var(--accent); }
+.gutter:focus-visible { outline: none; }
+/* The two vertical handles get their 6px from their grid track; this one is a flex item in the
+   preview column, so it needs an explicit basis — without it the strip is 0px tall and the handle
+   renders "fine" while being impossible to grab (measured, first browser pass). */
+.gutter-h { flex: 0 0 6px; cursor: row-resize; }
+.gutter-h::before { inset: 50% 0 auto 0; width: auto; height: 1px; transform: translateY(-50%); }
+.gutter-h:hover::before, .gutter-h.dragging::before, .gutter-h:focus-visible::before { height: 3px; width: auto; }
+/* While dragging, the cursor must not flicker to a text caret over the panes it passes. */
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing-h { cursor: row-resize; user-select: none; }
 
 /* File list */
 .files {
   min-height: 0;
   overflow-y: auto;
   padding: 0.5rem 0 1rem;
-  border-right: 1px solid var(--rule);
   background: var(--paper);
 }
 .files h2 {
@@ -267,6 +302,47 @@ h1 {
    override the UA's [hidden] { display: none } — every answer would render revealed and the deck
    would be inert while looking built. Five other rules in this file exist for the same reason. */
 .card-a[hidden] { display: none; }
+
+/* Companion document — a second reading/writing surface under the video player. Fixed-basis flex item
+   so the player keeps the rest of the column; min-height:0 + an internally scrolling body, because a
+   rendered lecture transcript is ~18,000px and would otherwise stretch the row (the M3 bug). */
+.companion {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--companion-h);
+  min-height: 0;
+  background: var(--surface);
+}
+.companion[hidden] { display: none; } /* display:flex above would beat the UA's [hidden] rule */
+.companion-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+}
+.companion-pick {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.companion-pick:focus { outline: none; border-color: var(--accent); }
+.companion-dirty { color: #9b6b2c; font-size: 0.72rem; white-space: nowrap; }
+.companion-dirty[hidden] { display: none; }
+.companion-dirty::before { content: "• "; }
+.companion-body { flex: 1; min-height: 0; overflow: auto; }
+.companion-body .prose { padding: 1rem 1.5rem 2rem; font-size: 1rem; }
+.companion-body pre { margin: 0; padding: 1rem 1.25rem; font-family: var(--mono); font-size: 0.85rem; white-space: pre-wrap; }
+.companion-body .empty, .companion-body .error { padding: 1rem 1.5rem; }
+.companion-body .editor { padding: 1rem 1.25rem; }
 
 /* In-place text editor: the same surface the preview uses, so saving doesn't feel like a mode change. */
 .preview-body.kind-editor { padding: 0; }
@@ -510,12 +586,15 @@ h1 {
 .composer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; }
 .chat-status { flex: 1; color: var(--muted); font-size: 0.78rem; }
 
-/* Narrow windows: stack the panes instead of squeezing them */
+/* Narrow windows: stack the panes instead of squeezing them. The gutters go away entirely — there
+   are no side-by-side tracks left to drag, and a stacked handle would just be a mystery bar. */
 @media (max-width: 1100px) {
   .subject-page { overflow: auto; }
   .workspace { grid-template-columns: 1fr; height: auto; }
-  .pane-left { grid-template-columns: 1fr; border-right: 0; }
-  .files { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--rule); }
+  .pane-left { grid-template-columns: 1fr; }
+  .gutter { display: none; }
+  .files { max-height: 40vh; border-bottom: 1px solid var(--rule); }
   .preview { min-height: 75vh; }
+  .companion { flex-basis: 45vh; border-top: 1px solid var(--rule); }
   .chat { min-height: 30vh; border-top: 1px solid var(--rule); }
 }

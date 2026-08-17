@@ -92,8 +92,8 @@ document.addEventListener("click", (ev) => {
   const btn = ev.target.closest(".file");
   if (!btn) return;
   const entry = entries.find((e) => e.path === btn.dataset.path);
-  if (!entry || !leaveEditor()) return; // never swap the preview out from under unsaved edits
-  select(entry);
+  if (!entry || !leaveDocs()) return; // never swap the preview out from under unsaved edits — in
+  select(entry);                      // either surface: the file above or the companion below
 });
 
 // marked has no sanitizer. Rendered markdown lands in the app's own origin, so strip anything
@@ -900,6 +900,113 @@ function updateActionContext() {
 }
 
 // =====================================================================================
+// Resizable panes. Each .gutter drags the CSS variable that sizes the pane before it, so the
+// browser's own grid/flex does the layout — no measuring loop, no observer, no library.
+// Sizes live in localStorage: a layout you set once should survive a reload.
+// =====================================================================================
+
+const LAYOUT_KEY = "studyroom.layout";
+const LAYOUT_DEFAULTS = { files: 260, chat: 400, companion: 320 }; // = M1's original fixed tracks
+const LAYOUT_VAR = { files: "--files-w", chat: "--chat-w", companion: "--companion-h" };
+
+let layout = { ...LAYOUT_DEFAULTS };
+try {
+  // A hand-edited or half-written entry must not brick the page — take only finite numbers.
+  const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}");
+  for (const k of Object.keys(LAYOUT_DEFAULTS)) if (Number.isFinite(saved[k])) layout[k] = saved[k];
+} catch { /* unreadable storage (private mode, quota, garbage): defaults are fine */ }
+
+const PREVIEW_MIN = 320; // the document surface keeps this much whatever the other two are dragged to
+const GUTTERS = 12;      // the two 6px handles in the workspace row
+
+/**
+ * Bounds for one pane, in px. Computed from the CURRENT window and the CURRENT other pane, never
+ * from stored numbers: a size dragged on an external monitor must not leave the preview at 0px on
+ * the laptop screen, and — measured, this is why PREVIEW_MIN exists — widening the sidebar to its
+ * own cap and then the chat to its own cap left the document itself 80px wide, since two limits
+ * that each only knew about the window agreed the squeeze was fine.
+ */
+function layoutLimits(which) {
+  const w = window.innerWidth;
+  if (which === "files") return [150, Math.max(150, Math.min(520, w - layout.chat - GUTTERS - PREVIEW_MIN))];
+  if (which === "chat") return [280, Math.max(280, Math.min(900, w - layout.files - GUTTERS - PREVIEW_MIN))];
+  // The companion shares the preview column, so it is bounded by that column's real height — a strip
+  // of the document above it always survives.
+  const previewH = $(".preview").getBoundingClientRect().height || window.innerHeight;
+  return [120, Math.max(120, previewH - 140)];
+}
+
+const clampLayout = (which, px) => {
+  const [lo, hi] = layoutLimits(which);
+  return Math.round(Math.min(hi, Math.max(lo, px)));
+};
+
+function applyLayout(persist = false) {
+  for (const which of Object.keys(LAYOUT_DEFAULTS)) {
+    layout[which] = clampLayout(which, layout[which]);
+    document.documentElement.style.setProperty(LAYOUT_VAR[which], `${layout[which]}px`);
+  }
+  if (persist) {
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch { /* quota / private mode */ }
+  }
+}
+
+for (const gutter of document.querySelectorAll(".gutter")) {
+  const which = gutter.dataset.resize;
+  const vertical = which === "companion"; // this one moves up/down; the other two left/right
+  // The chat gutter drags the pane to its RIGHT, so its delta is inverted.
+  const sign = which === "chat" ? -1 : 1;
+
+  gutter.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const start = vertical ? e.clientY : e.clientX;
+    const from = layout[which];
+    // Capture keeps the drag alive over an <iframe>/<embed>/<video>, which would otherwise swallow
+    // pointermove. It throws if the pointer was already released; that must not abort the handler
+    // and strand the .dragging class and the body cursor.
+    try { gutter.setPointerCapture(e.pointerId); } catch { /* pointer already gone; drag still works */ }
+    gutter.classList.add("dragging");
+    document.body.classList.add(vertical ? "resizing-h" : "resizing");
+
+    const move = (ev) => {
+      // companion: dragging the handle UP makes the companion taller, so that delta inverts too.
+      const delta = vertical ? start - ev.clientY : (ev.clientX - start) * sign;
+      layout[which] = clampLayout(which, from + delta);
+      document.documentElement.style.setProperty(LAYOUT_VAR[which], `${layout[which]}px`);
+    };
+    const up = () => {
+      gutter.removeEventListener("pointermove", move);
+      gutter.classList.remove("dragging");
+      document.body.classList.remove("resizing", "resizing-h");
+      applyLayout(true);
+    };
+    gutter.addEventListener("pointermove", move);
+    gutter.addEventListener("pointerup", up, { once: true });
+    gutter.addEventListener("pointercancel", up, { once: true });
+  });
+
+  gutter.addEventListener("dblclick", () => {
+    layout[which] = LAYOUT_DEFAULTS[which];
+    applyLayout(true);
+  });
+
+  // A separator that can be focused should answer the arrow keys — one line each, and it makes the
+  // handle usable without a trackpad.
+  gutter.addEventListener("keydown", (e) => {
+    const keys = vertical ? { ArrowUp: 1, ArrowDown: -1 } : { ArrowLeft: -sign, ArrowRight: sign };
+    if (!(e.key in keys)) return;
+    e.preventDefault();
+    layout[which] = clampLayout(which, layout[which] + keys[e.key] * 16);
+    applyLayout(true);
+  });
+}
+
+applyLayout();
+// Shrinking the window must not leave a pane wider than the window it lives in.
+addEventListener("resize", () => applyLayout());
+
+// =====================================================================================
 // File management — upload, write, rename, archive. The app owns Gregory's materials now;
 // Claude's own rules (prompts.js) are unchanged: it still only CREATES, only under _generated/.
 // =====================================================================================
@@ -960,6 +1067,10 @@ function syncFileButtons(entry) {
   $("#file-edit-cancel").hidden = !open;
   $("#file-rename").hidden = open || !entry;
   $("#file-delete").hidden = open || !entry;
+  // The companion stays available while the main editor is up: unlike Transcribe or the focused chat,
+  // it reads a DIFFERENT file, so an unsaved buffer above it makes no difference to what it shows.
+  $("#companion-toggle").hidden = !entry;
+  syncCompanion(); // every repaint of the preview keeps the pane below it in step
   if (open) {
     // While the editor is up, every action that reads the file off disk would read a stale copy.
     $("#transcribe").hidden = true;
@@ -1095,6 +1206,12 @@ function startFileRename() {
     const res = await send(fileApi(entry.path), jsonOpts("PATCH", { path: parts.join("/") }));
     if (!res.ok) return fileStatus(await errorText(res), true);
     const updated = await res.json();
+    // The companion pairing is keyed on the main file's path, so a rename would orphan it and the
+    // pane would silently close on a file you had just set up.
+    if (companions.has(entry.path)) {
+      companions.set(updated.path, companions.get(entry.path));
+      companions.delete(entry.path);
+    }
     await refreshFiles();
     const moved = entries.find((e) => e.path === updated.path);
     if (moved) select(moved);
@@ -1123,6 +1240,7 @@ async function deleteFile() {
   const entry = entries.find((e) => e.path === selectedPath);
   if (!entry || editing) return;
   if (!confirm(`Archive "${entry.name}"?\n\nIt moves to .studyroom/archive/files/ — nothing is erased, and you can move it back by hand.`)) return;
+  if (!leaveCompanion()) return; // clearPreview() tears the companion down; unsaved notes get a say first
   const res = await send(fileApi(entry.path), { method: "DELETE" });
   if (!res.ok) return fileStatus(await errorText(res), true);
   await refreshFiles();
@@ -1130,7 +1248,250 @@ async function deleteFile() {
   fileStatus(`Archived ${entry.name}.`);
 }
 
-// ---- wiring ----
+// =====================================================================================
+// Companion document — a second document under the one being previewed: the transcript beside its
+// lecture, your notes beside a PDF chapter. One companion at a time, per main document.
+//
+// The pairing lives in memory only, by Gregory's explicit call ("closing the web app will reset all
+// state - I accept that"): no localStorage, no state.json, nothing to migrate or clean up.
+// =====================================================================================
+
+const companions = new Map(); // main doc path -> companion doc path; "" = open, nothing picked;
+                              // ABSENT = closed. One value per key is what makes "only one at a time"
+                              // structural rather than something the UI has to police.
+let companionPath = null;     // what the companion body currently shows: a doc path, "" for the
+                              // pick-a-document hint, or null for a torn-down (closed) pane. The
+                              // hint and "closed" have to be DIFFERENT states — collapsing them
+                              // left a reopened companion blank instead of prompting (measured).
+let companionEditing = null;  // { path, original } while the companion editor is open
+
+const COMPANION_TYPES = new Set(["markdown", "text"]); // what reads sensibly under another document
+
+/** Options for the picker: every text-ish file except the one already on top of it. */
+function companionOptions() {
+  return entries
+    .filter((e) => COMPANION_TYPES.has(e.type) && e.path !== selectedPath)
+    .map((e) => ({ path: e.path, label: e.path.startsWith("_generated/") ? e.path.slice("_generated/".length) : e.path }));
+}
+
+function renderCompanionPicker(chosen) {
+  const sel = $("#companion-pick");
+  const opts = companionOptions();
+  sel.innerHTML = [
+    `<option value="">— pick a document —</option>`,
+    ...opts.map((o) => `<option value="${esc(o.path)}"${o.path === chosen ? " selected" : ""}>${esc(o.label)}</option>`),
+  ].join("");
+  sel.value = chosen || ""; // a pairing whose file was renamed or archived falls back to the prompt
+}
+
+function syncCompanionButtons() {
+  const editingHere = Boolean(companionEditing);
+  const entry = entries.find((e) => e.path === companionPath);
+  $("#companion-edit").hidden = editingHere || !entry || !EDITABLE.has(entry.type);
+  $("#companion-save").hidden = !editingHere;
+  $("#companion-cancel").hidden = !editingHere;
+  $("#companion-new").hidden = editingHere;
+  $("#companion-pick").disabled = editingHere; // switching docs mid-edit is the one move that would
+                                               // silently drop what you just typed
+  // Derived, never assumed: this function also runs on repaints that happen mid-edit (the Cards
+  // toggle, a listing refresh), and force-clearing the marker there would deny live unsaved work.
+  const ta = $("#companion-body .editor");
+  $("#companion-dirty").hidden = !(editingHere && ta && ta.value !== companionEditing.original);
+}
+
+/** Render one document into the companion body. Guarded against a slow fetch losing a race. */
+async function renderCompanionDoc(path) {
+  const body = $("#companion-body");
+  companionPath = path || "";
+  syncCompanionButtons();
+  if (!path) {
+    body.innerHTML = `<p class="empty">Pick a document to show here — or press + Note to start a new one.</p>`;
+    return;
+  }
+  const entry = entries.find((e) => e.path === path);
+  if (!entry) {
+    body.innerHTML = `<p class="error">${esc(path)} is no longer in this subject.</p>`;
+    return;
+  }
+  body.innerHTML = `<p class="empty">Loading…</p>`;
+  let text;
+  try {
+    const res = await fetch(fileUrl(path));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    text = await res.text();
+  } catch (err) {
+    if (companionPath === path) body.innerHTML = `<p class="error">Could not load ${esc(entry.name)}: ${esc(err.message)}</p>`;
+    return;
+  }
+  if (companionPath !== path) return; // a newer pick owns the pane now
+  if (entry.type === "markdown") {
+    const article = document.createElement("article");
+    article.className = "prose";
+    article.append(...sanitize(marked.parse(text)).childNodes);
+    body.replaceChildren(article);
+  } else {
+    const pre = document.createElement("pre");
+    pre.textContent = text;
+    body.replaceChildren(pre);
+  }
+  syncCompanionButtons();
+}
+
+/**
+ * Bring the companion into line with the selected file. Called from syncFileButtons(), so every path
+ * that repaints the preview keeps it in step. It only re-renders when the TARGET DOCUMENT CHANGED —
+ * otherwise opening the main editor (which calls syncFileButtons) would throw away companion edits.
+ */
+function syncCompanion() {
+  const main = selectedPath;
+  const open = Boolean(main && companions.has(main));
+  $("#companion").hidden = !open;
+  $(".gutter-h").hidden = !open;
+  $("#companion-toggle").setAttribute("aria-pressed", String(open));
+  if (!open) {
+    if (companionPath !== null) {
+      companionPath = null;
+      companionEditing = null;
+      $("#companion-body").replaceChildren();
+    }
+    return;
+  }
+  let want = companions.get(main);
+  // A document is never its own companion. Unreachable today — companionOptions() already filters
+  // selectedPath out, and every other writer of this Map takes its value from that picker or from a
+  // freshly created file — but stated here because it is the invariant that keeps `editing` and
+  // `companionEditing` from ever holding the same path: two independent buffers over one file means
+  // whichever saves LAST silently overwrites the other, with git as the only undo.
+  if (want === main) want = "";
+  if (want && !entries.some((e) => e.path === want)) want = ""; // renamed or archived out from under us
+  renderCompanionPicker(want);
+  if (want !== companionPath) guard(renderCompanionDoc(want));
+  else syncCompanionButtons(); // same document already showing: never repaint, or opening the main
+                               // editor (which routes through here) would discard companion edits
+}
+
+/** Open the companion editor on whatever is showing. Mirrors openEditor(), on the other surface. */
+async function openCompanionEditor() {
+  const entry = entries.find((e) => e.path === companionPath);
+  if (!entry || !EDITABLE.has(entry.type)) return;
+  if (entry.size > EDIT_MAX) return fileStatus(`${entry.name} is too large to edit here (${fmtSize(entry.size)}).`, true);
+  let text;
+  try {
+    const res = await send(fileUrl(entry.path));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    text = await res.text();
+  } catch (err) {
+    return fileStatus(`Could not open ${entry.name}: ${err.message}`, true);
+  }
+  companionEditing = { path: entry.path, original: text };
+  const ta = document.createElement("textarea");
+  ta.className = "editor";
+  ta.spellcheck = false;
+  ta.value = text;
+  ta.addEventListener("input", () => { $("#companion-dirty").hidden = ta.value === companionEditing?.original; });
+  $("#companion-body").replaceChildren(ta);
+  syncCompanionButtons();
+  ta.focus();
+}
+
+async function saveCompanionEditor() {
+  const ta = $("#companion-body .editor");
+  if (!companionEditing || !ta) return;
+  const res = await send(fileApi(companionEditing.path, "?overwrite=1"), {
+    method: "PUT",
+    headers: { "Content-Type": "text/plain; charset=utf-8" }, // never application/json — express.json()
+    body: ta.value,                                          // would eat the stream (see DECISIONS)
+  });
+  if (!res.ok) return fileStatus(await errorText(res), true);
+  const path = companionEditing.path;
+  companionEditing = null;
+  await refreshFiles();          // the size in the listing is now stale
+  companionPath = null;          // force renderCompanionDoc to repaint from disk
+  await renderCompanionDoc(path);
+  fileStatus("Saved.");
+}
+
+/** A new note, created and opened for writing without disturbing the document above it. */
+async function createCompanionNote() {
+  const main = entries.find((e) => e.path === selectedPath);
+  const suggestion = `notes-${slugify(main?.name || "notes")}-${todayISO()}.md`;
+  const raw = prompt("Name for the new note:", suggestion);
+  if (raw === null) return;
+  const trimmed = raw.trim();
+  if (!trimmed) return;
+  const name = /\.[^.]+$/.test(trimmed) ? trimmed : `${trimmed}.md`;
+  const res = await send(fileApi(name), { method: "PUT", headers: { "Content-Type": "text/plain" }, body: "" });
+  if (!res.ok) return fileStatus(await errorText(res), true);
+  fileStatus("");
+  await refreshFiles();
+  const entry = entries.find((e) => e.path === name);
+  if (!entry) return;
+  companions.set(selectedPath, entry.path);
+  renderCompanionPicker(entry.path);
+  await renderCompanionDoc(entry.path);
+  await openCompanionEditor(); // straight into typing — that is the whole point of the button
+}
+
+/** True if it is safe to leave the companion editor; asks only when the text actually changed. */
+function leaveCompanion() {
+  if (!companionEditing) return true;
+  const ta = $("#companion-body .editor");
+  if (ta && ta.value !== companionEditing.original && !confirm("Discard your unsaved changes to the companion note?")) return false;
+  companionEditing = null;
+  return true;
+}
+
+/**
+ * Both editors, asked about BEFORE either is closed. Closing one and then bailing out of the other
+ * would leave a textarea on screen that nothing tracks any more — live-looking and unsavable.
+ */
+function leaveDocs() {
+  const mainTa = $("#preview .editor");
+  const compTa = $("#companion-body .editor");
+  const mainDirty = editing && mainTa && mainTa.value !== editing.original;
+  const compDirty = companionEditing && compTa && compTa.value !== companionEditing.original;
+  if (mainDirty && !confirm("Discard your unsaved changes?")) return false;
+  if (compDirty && !confirm("Discard your unsaved changes to the companion note?")) return false;
+  editing = null;
+  companionEditing = null;
+  return true;
+}
+
+// ---- wiring: companion ----
+$("#companion-toggle").addEventListener("click", () => {
+  if (!selectedPath) return;
+  if (companions.has(selectedPath)) {
+    if (!leaveCompanion()) return;
+    companions.delete(selectedPath);
+  } else {
+    // A lecture's own transcript is the one companion worth guessing at; everything else opens empty.
+    const main = entries.find((e) => e.path === selectedPath);
+    const guess = main && hasTranscript(main) ? transcriptPath(main) : "";
+    companions.set(selectedPath, guess);
+  }
+  syncCompanion();
+});
+$("#companion-close").addEventListener("click", () => {
+  if (!leaveCompanion() || !selectedPath) return;
+  companions.delete(selectedPath);
+  syncCompanion();
+});
+$("#companion-pick").addEventListener("change", (e) => {
+  if (!leaveCompanion()) { e.target.value = companionPath || ""; return; }
+  companions.set(selectedPath, e.target.value);
+  renderCompanionDoc(e.target.value);
+});
+$("#companion-new").addEventListener("click", () => guard(createCompanionNote()));
+$("#companion-edit").addEventListener("click", () => guard(openCompanionEditor()));
+$("#companion-save").addEventListener("click", () => guard(saveCompanionEditor()));
+$("#companion-cancel").addEventListener("click", () => {
+  const path = companionEditing?.path;
+  if (!leaveCompanion()) return;
+  companionPath = null; // the editor replaced the rendered body, so force a repaint
+  guard(renderCompanionDoc(path));
+});
+
+// ---- wiring: files ----
 $("#file-add").addEventListener("click", () => $("#file-input").click());
 $("#file-input").addEventListener("change", (e) => {
   guard(uploadFiles(e.target.files));
@@ -1192,10 +1553,14 @@ document.addEventListener("drop", (e) => {
   if (e.dataTransfer.files.length) guard(uploadFiles(e.dataTransfer.files));
 });
 
-// A note editor that loses work on a stray Cmd-R is not a note editor. Only speaks up when dirty.
+// A note editor that loses work on a stray Cmd-R is not a note editor. Only speaks up when dirty —
+// and it has to watch BOTH surfaces now, since the companion is where notes actually get typed.
 addEventListener("beforeunload", (e) => {
   const ta = $("#preview .editor");
-  if (editing && ta && ta.value !== editing.original) e.preventDefault();
+  const cta = $("#companion-body .editor");
+  const dirty = (editing && ta && ta.value !== editing.original) ||
+                (companionEditing && cta && cta.value !== companionEditing.original);
+  if (dirty) e.preventDefault();
 });
 
 $("#chat-switcher").addEventListener("change", (e) => openChat(e.target.value));

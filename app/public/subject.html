@@ -14,7 +14,9 @@
     <span class="crumb" id="crumb"></span>
   </header>
 
-  <!-- Split view (design doc §3.2): left pane = file list + preview, right pane = chat. -->
+  <!-- Split view (design doc §3.2): left pane = file list + preview, right pane = chat.
+       The three .gutter elements are real grid/flex items: each one drags the CSS variable that sizes
+       the track beside it, so resizing costs no layout code. -->
   <main class="workspace">
     <section class="pane-left">
       <aside class="files" aria-label="Files">
@@ -35,6 +37,9 @@
         <div id="generated" class="file-group" data-empty="Nothing generated yet — study actions will save their output here."></div>
       </aside>
 
+      <div class="gutter" data-resize="files" role="separator" aria-orientation="vertical" tabindex="0"
+           aria-label="Resize the file list" title="Drag to resize · double-click to reset"></div>
+
       <section class="preview" aria-label="Preview">
         <div class="preview-bar">
           <span id="preview-title" class="preview-title">Preview</span>
@@ -46,6 +51,7 @@
           <button type="button" id="file-edit-cancel" class="btn small" hidden>Cancel</button>
           <button type="button" id="file-rename" class="btn small icon" hidden title="Rename this file" aria-label="Rename file">✎</button>
           <button type="button" id="file-delete" class="btn small icon danger" hidden title="Archive this file" aria-label="Archive file">🗑</button>
+          <button type="button" id="companion-toggle" class="btn small" hidden title="Show a second document below this one — read a transcript along with a lecture, or jot notes while you read">⊞ Companion</button>
           <button type="button" id="transcribe" class="btn small" hidden title="Transcribe this lecture with local Whisper — one job at a time, takes a fraction of the video's length">Transcribe</button>
           <button type="button" id="focus-chat" class="btn small" hidden title="Start a chat dedicated to this file">New focused chat</button>
           <a id="preview-open" class="preview-open" href="#" target="_blank" rel="noopener" hidden>Open in new tab ↗</a>
@@ -59,8 +65,31 @@
         <div id="preview" class="preview-body">
           <p class="empty">Pick a file on the left — PDFs, lecture videos, notes and generated study kits all preview here.</p>
         </div>
+
+        <!-- Companion document: a second document under whatever is being previewed — the transcript
+             beside its lecture, notes beside a PDF chapter. It sits OUTSIDE #preview on purpose:
+             renderPreview() replaces that element's children, so a companion living inside it would
+             tear down the <video> (restarting the lecture) or reload the PDF <embed> and throw away
+             the page you were on, every time you picked a document. -->
+        <div class="gutter gutter-h" data-resize="companion" role="separator" aria-orientation="horizontal"
+             tabindex="0" aria-label="Resize the companion document" title="Drag to resize · double-click to reset" hidden></div>
+        <section id="companion" class="companion" aria-label="Companion document" hidden>
+          <div class="companion-bar">
+            <select id="companion-pick" class="companion-pick" title="Which document to show down here" aria-label="Companion document"></select>
+            <span id="companion-dirty" class="companion-dirty" hidden>unsaved</span>
+            <button type="button" id="companion-new" class="btn small" title="Create a new note and start writing it here">+ Note</button>
+            <button type="button" id="companion-edit" class="btn small" hidden title="Write in this document without leaving the one above">Edit</button>
+            <button type="button" id="companion-save" class="btn small primary" hidden title="Save your changes">Save</button>
+            <button type="button" id="companion-cancel" class="btn small" hidden>Cancel</button>
+            <button type="button" id="companion-close" class="btn small icon" title="Close the companion" aria-label="Close the companion">✕</button>
+          </div>
+          <div id="companion-body" class="companion-body"></div>
+        </section>
       </section>
     </section>
+
+    <div class="gutter" data-resize="chat" role="separator" aria-orientation="vertical" tabindex="0"
+         aria-label="Resize the chat pane" title="Drag to resize · double-click to reset"></div>
 
     <aside class="pane-right chat" aria-label="Chat">
       <div class="chat-head">
