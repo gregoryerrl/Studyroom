@@ -1,9 +1,9 @@
 // Claude Code CLI integration (design doc §6): spawn one `claude -p` per turn, parse the
 // newline-delimited stream-json on stdout, resume context with --resume. No retries, no
 // timeouts, no reapers — the Cancel button is the timeout, the error bubble is the recovery.
-import { spawn } from "node:child_process";
 import readline from "node:readline";
 import path from "node:path";
+import { spawnCommand, killTree } from "./platform.js";
 
 const ALLOWED_TOOLS = "Read Grep Glob Write Edit WebSearch WebFetch TodoWrite";
 const DENIED_TOOLS = "Bash Task NotebookEdit"; // deny wins over allow: no shell, no subagents
@@ -39,7 +39,7 @@ function childEnv() {
  */
 export function runTurn({ subjectDir, prompt, systemPromptFile, resumeId, model, effort }, on) {
   const args = [
-    "-p", prompt,
+    "-p", // the prompt itself goes in on stdin, not argv — see the spawn below
     "--output-format", "stream-json",
     "--verbose", // REQUIRED when combining -p with stream-json output
     "--include-partial-messages", // token-level deltas (verified on 2.1.233); full blocks still follow
@@ -53,14 +53,31 @@ export function runTurn({ subjectDir, prompt, systemPromptFile, resumeId, model,
   if (model) args.push("--model", model);
   if (effort) args.push("--effort", effort);
   if (resumeId) args.push("--resume", resumeId);
-  console.debug(`[claude] spawn (cwd=${subjectDir}) claude ${args.map((a) => (a === prompt ? JSON.stringify(a.slice(0, 60)) : a)).join(" ")}`);
+  console.debug(`[claude] spawn (cwd=${subjectDir}) claude ${args.join(" ")} <stdin ${JSON.stringify(prompt.slice(0, 60))}`);
 
-  const child = spawn("claude", args, {
-    cwd: subjectDir, // ALWAYS pin cwd — this grounds Claude in the course materials
-    env: childEnv(),
-    stdio: ["ignore", "pipe", "pipe"],
-    detached: true, // own process group → cancel can kill claude AND its tool children
-  });
+  let child;
+  try {
+    // The prompt arrives on STDIN rather than as an argv element (verified 2026-08-18: `claude -p`
+    // reads it there). On Windows an npm-installed `claude` is a .cmd shim, which can only be
+    // spawned through cmd.exe — and cmd.exe re-parses the command line, so putting arbitrary user
+    // text (quotes, &, newlines) on it is a liability. It also sidesteps the ~32k command-line
+    // ceiling there. spawnCommand sets its own detached/windowsHide per platform.
+    child = spawnCommand("claude", args, {
+      cwd: subjectDir, // ALWAYS pin cwd — this grounds Claude in the course materials
+      env: childEnv(),
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+  } catch (err) {
+    // Not installed / not on PATH. Reported through the normal result path so this function's
+    // contract holds: it always returns { cancel } and always emits exactly one result. The
+    // microtask matters — a synchronous result would land before the caller has stored the handle.
+    queueMicrotask(() => on.result({ failed: true, message: err.message }));
+    return { cancel() {} };
+  }
+  // A child that dies before reading turns this write into EPIPE, and an unhandled EPIPE on a
+  // stream takes the whole server down.
+  child.stdin.on("error", () => {});
+  child.stdin.end(prompt);
 
   let done = false;
   let stderrTail = "";
@@ -119,11 +136,7 @@ export function runTurn({ subjectDir, prompt, systemPromptFile, resumeId, model,
 
   return {
     cancel() {
-      try {
-        process.kill(-child.pid, "SIGKILL"); // negative pid = the whole process group
-      } catch {
-        /* already gone */
-      }
+      killTree(child); // the whole process group off Windows, taskkill /T on it
     },
   };
 }
