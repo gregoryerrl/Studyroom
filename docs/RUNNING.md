@@ -87,9 +87,10 @@ The app picks whichever it finds on your PATH, preferring mlx-whisper. Override 
 - `STUDYROOM_WHISPER_MODEL=small` — pin the model.
 
 If neither is installed the Transcribe button answers with one sentence telling you so; nothing
-else in the app is affected. On a non-Apple-Silicon machine mlx-whisper is skipped even when it is
-on your PATH, because it cannot run there — `STUDYROOM_WHISPER=mlx` overrides that if you want to
-see it fail for yourself.
+else in the app is affected. Auto-detection skips mlx-whisper unless Node reports an `arm64`
+process, even when mlx is on your PATH — on an Intel machine it genuinely cannot run. There is one
+false negative: **x64 Node under Rosetta on an Apple Silicon Mac** reports `x64`, so mlx is skipped
+there even though it would have worked. `STUDYROOM_WHISPER=mlx` is the override in both cases.
 
 ⚠️ **The openai-whisper path has never been executed** — see §5 before relying on it.
 
