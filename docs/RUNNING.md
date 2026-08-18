@@ -87,7 +87,11 @@ The app picks whichever it finds on your PATH, preferring mlx-whisper. Override 
 - `STUDYROOM_WHISPER_MODEL=small` — pin the model.
 
 If neither is installed the Transcribe button answers with one sentence telling you so; nothing
-else in the app is affected.
+else in the app is affected. On a non-Apple-Silicon machine mlx-whisper is skipped even when it is
+on your PATH, because it cannot run there — `STUDYROOM_WHISPER=mlx` overrides that if you want to
+see it fail for yourself.
+
+⚠️ **The openai-whisper path has never been executed** — see §5 before relying on it.
 
 **Two things to expect the first time you transcribe with openai-whisper:**
 
@@ -115,7 +119,8 @@ This project has no automated test suite by design; verification is done by runn
 
 | Platform | Status |
 |---|---|
-| macOS 26 (Apple M4) | **Run.** Everything in this guide, including chats and transcription. |
+| macOS 26 (Apple M4) | **Run** — the launcher, chats (including cancel and follow-up turns) and transcription. Transcription only ever ran through **mlx-whisper**. |
+| openai-whisper, on any OS | **Never run.** Its flag dialect and output naming were read out of its own source, and the first-run download path was proven against a `tqdm` fixture rather than a real 1.5 GB fetch. Selecting it — including with `STUDYROOM_WHISPER=whisper` on a Mac — puts you on an unexercised path. |
 | Linux | **Not run in this session.** The code path is the same POSIX one macOS uses — process groups, `pgrep`, `xdg-open` — with openai-whisper in place of mlx-whisper. |
 | Windows (native) | **Not run.** No Windows machine was available. The cmd.exe quoting, `taskkill /T`, PATHEXT resolution and `studyroom.cmd` are written from Node's and cmd.exe's documented behaviour, and the argument-quoting half is unit-checked, but nothing has executed there. |
 | Windows (WSL2) | **Not run directly** — it is the Linux row. |
