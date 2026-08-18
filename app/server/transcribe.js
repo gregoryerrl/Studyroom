@@ -69,8 +69,16 @@ const ENGINES = {
 export function pickEngine() {
   const wanted = process.env.STUDYROOM_WHISPER;
   for (const name of wanted ? [wanted] : Object.keys(ENGINES)) {
+    // hasOwn, not truthiness: ENGINES.constructor and ENGINES.__proto__ are INHERITED and truthy,
+    // so a bare lookup hands back an object with no `bin` and findExecutable(undefined) throws —
+    // a 500 out of the one route whose whole job is to answer 400 with advice. Reproduced.
+    if (!Object.hasOwn(ENGINES, name)) continue;
     const engine = ENGINES[name];
-    if (!engine || !findExecutable(engine.bin)) continue;
+    // Auto-detection only. MLX runs on Apple Silicon and nowhere else, so an Intel Mac (or Node
+    // under Rosetta) with mlx_whisper on PATH would pick it and die in a Python traceback instead
+    // of falling through to openai-whisper. An explicit STUDYROOM_WHISPER=mlx still wins.
+    if (!wanted && name === "mlx" && process.arch !== "arm64") continue;
+    if (!findExecutable(engine.bin)) continue;
     return { name, ...engine, model: process.env.STUDYROOM_WHISPER_MODEL || engine.model };
   }
   return null;
@@ -79,8 +87,12 @@ export function pickEngine() {
 /** Why pickEngine() came back empty, in one sentence the user can act on. */
 export function engineError() {
   const wanted = process.env.STUDYROOM_WHISPER;
-  if (wanted && !ENGINES[wanted]) return `STUDYROOM_WHISPER=${wanted} is not a known engine — use "mlx" or "whisper".`;
+  if (wanted && !Object.hasOwn(ENGINES, wanted)) return `STUDYROOM_WHISPER=${wanted} is not a known engine — use "mlx" or "whisper".`;
   if (wanted) return `STUDYROOM_WHISPER=${wanted} is set, but ${ENGINES[wanted].bin} is not on this machine's PATH — see docs/RUNNING.md.`;
+  // Otherwise "install one" would be advice to install something already sitting on this PATH.
+  if (findExecutable(ENGINES.mlx.bin) && process.arch !== "arm64") {
+    return "mlx-whisper is installed but only runs on Apple Silicon — install openai-whisper, or set STUDYROOM_WHISPER=mlx to try it anyway. See docs/RUNNING.md.";
+  }
   return "No transcription engine is installed — add mlx-whisper (Apple Silicon only) or openai-whisper (any OS). See docs/RUNNING.md.";
 }
 
