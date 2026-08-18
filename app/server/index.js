@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import path from "node:path";
 import {
-  listSubjects, subjectDir, listFiles, fileEntry, findSubject, nameError, resolveInSubject,
+  listSubjects, subjectDir, listFiles, fileEntry, fileType, findSubject, nameError, resolveInSubject,
 } from "./subjects.js";
 import * as store from "./store.js";
 import { buildSystemPrompt, defaultTitle } from "./prompts.js";
@@ -300,6 +300,28 @@ app.get("/files/:s/*path", async (req, res) => {
     return res.status(missing ? 404 : 500).json({ error: missing ? "no such file" : err.message });
   }
   if (!abs.startsWith(subject.dir + path.sep)) return res.status(403).json({ error: "path outside subject" });
+
+  // Two overrides on the way out, both keyed on the SAME classifier the listing uses, so there is
+  // no second extension list to drift out of step with TYPE_BY_EXT. `send` returns early if a
+  // Content-Type is already set, so setting one here sticks.
+  const kind = fileType(path.basename(abs));
+  // 1. Text-ish files must SHOW when opened in a new tab, not download. send's mime table gives
+  //    .md `text/markdown` (which browsers download) and nothing at all for .py/.ts/.tex (so
+  //    octet-stream). Every in-app read of this route uses fetch().text(), which ignores the type.
+  //    Keep the charset — the lecture transcripts are UTF-8 and would mojibake without it.
+  if (kind === "markdown" || kind === "text") res.type("text/plain; charset=utf-8");
+  // 2. Anything the browser might treat as a scriptable DOCUMENT gets the same sandbox the in-app
+  //    preview already applies via <iframe sandbox>. ALLOWLIST, not denylist: nameError() permits
+  //    any extension, and `other` is everything TYPE_BY_EXT doesn't name — .svg (image/svg+xml)
+  //    and .xhtml (application/xhtml+xml) are scriptable top-level and both land there — so this
+  //    fails closed for the next unknown extension. pdf/video are excluded to keep their native
+  //    viewers; markdown/text are inert as text/plain above. NEVER add allow-same-origin beside
+  //    allow-scripts: that combination defeats the sandbox entirely.
+  if (kind === "html" || kind === "other") res.set("Content-Security-Policy", "sandbox");
+
+  // The error callback answers JSON, but express only defaults that Content-Type when none is
+  // set — so on the (unreachable in practice) TOCTOU-ENOENT path it inherits text/plain from
+  // above. fetch().json() ignores the type, so this is noted rather than restructured.
   res.sendFile(abs, { dotfiles: "deny" }, (err) => {
     if (err && !res.headersSent) res.status(err.status || 500).json({ error: err.message });
   });

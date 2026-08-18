@@ -241,6 +241,26 @@ body.resizing-h { cursor: row-resize; user-select: none; }
    many rows with no badge, because an empty auto track still gets its gap. */
 .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fsize { color: var(--muted); font-size: 0.78rem; }
+/* Open-in-new-tab, one per row. Absolutely positioned so it never becomes that fourth grid child;
+   .file-row is only a positioning context, so the descendant selectors above still apply. The
+   260px pane has no room for a fourth item, so while the link shows it TAKES the trailing cell's
+   place rather than competing with it for width. */
+.file-row { position: relative; }
+.file-open {
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  padding: 0 0.2rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+.file-row:hover .file-open, .file-open:focus-visible { opacity: 1; }
+.file-open:hover { color: var(--accent); }
+.file-row:hover .fsize, .file-row:hover .badge,
+.file-row:focus-within .fsize, .file-row:focus-within .badge { visibility: hidden; }
 .files .empty { padding: 0.25rem 1rem; font-size: 0.85rem; }
 
 /* Preview */
@@ -412,6 +432,9 @@ body.resizing-h { cursor: row-resize; user-select: none; }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .btn.small { font-size: 0.8rem; padding: 0.25rem 0.55rem; }
 .btn.icon { padding-left: 0.45rem; padding-right: 0.45rem; }
+/* A .btn that is a link, not a button — the companion's open-in-new-tab. Anchors are inline and
+   underlined by default, which neither the padding nor the row's baseline alignment survives. */
+a.btn { display: inline-block; text-decoration: none; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn.danger { color: #9b2c2c; border-color: #d9b4b4; }

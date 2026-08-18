@@ -52,12 +52,21 @@ function renderList(list, mount, stripPrefix) {
     const trailing = needsTranscript
       ? '<span class="badge" title="No transcript yet — select this video and press Transcribe">no transcript</span>'
       : `<span class="fsize">${fmtSize(entry.size)}</span>`;
+    // The ↗ link is a SIBLING of the button, not a child of it: `.file` is a three-track grid and
+    // a fourth child is exactly what pushed the badge onto an implicit second row before. It is
+    // absolutely positioned inside .file-row, so it stays out of that grid entirely — and because
+    // the delegated click handler matches closest(".file"), clicking it opens the tab without
+    // selecting the file or tripping the unsaved-edit guard.
     return `
-    <button class="file${entry.path === selectedPath ? " active" : ""}" data-path="${esc(entry.path)}" title="${esc(entry.path)}">
-      <span class="glyph">${GLYPH[entry.type] || GLYPH.other}</span>
-      <span class="fname">${esc(label)}</span>
-      ${trailing}
-    </button>`;
+    <div class="file-row">
+      <button class="file${entry.path === selectedPath ? " active" : ""}" data-path="${esc(entry.path)}" title="${esc(entry.path)}">
+        <span class="glyph">${GLYPH[entry.type] || GLYPH.other}</span>
+        <span class="fname">${esc(label)}</span>
+        ${trailing}
+      </button>
+      <a class="file-open" href="${esc(fileUrl(entry.path))}" target="_blank" rel="noopener"
+         title="Open in a new tab" aria-label="Open ${esc(label)} in a new tab">↗</a>
+    </div>`;
   }).join("");
   const html = [];
   if (groups.has("")) html.push(rows(groups.get("")));       // root-level files first
@@ -1293,6 +1302,11 @@ function syncCompanionButtons() {
   $("#companion-new").hidden = editingHere;
   $("#companion-pick").disabled = editingHere; // switching docs mid-edit is the one move that would
                                                // silently drop what you just typed
+  // Hidden while an editor is open here, for the same reason #preview-open is: a new tab would
+  // serve the copy on disk, not the buffer you are typing into.
+  const open = $("#companion-open");
+  open.hidden = editingHere || !entry;
+  if (entry) open.href = fileUrl(entry.path);
   // Derived, never assumed: this function also runs on repaints that happen mid-edit (the Cards
   // toggle, a listing refresh), and force-clearing the marker there would deny live unsaved work.
   const ta = $("#companion-body .editor");
