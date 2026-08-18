@@ -55,9 +55,11 @@ const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
  * warning about.
  */
 export function portabilityError(name) {
-  if (WINDOWS_ILLEGAL.test(name)) return 'name cannot contain any of < > : " | ? * (Windows rejects them)';
-  if (/[. ]$/.test(name)) return "name cannot end with a dot or a space (Windows strips them)";
-  if (WINDOWS_RESERVED.test(name)) return `"${name}" is a reserved device name on Windows`;
+  // Each says what to DO, not just what is wrong: this fires on upload too, where the offending
+  // name came off a publisher's PDF rather than out of a text box the user is looking at.
+  if (WINDOWS_ILLEGAL.test(name)) return 'name cannot contain any of < > : " | ? * — Windows cannot hold them; rename it and try again';
+  if (/[. ]$/.test(name)) return "name cannot end with a dot or a space — Windows strips them; rename it and try again";
+  if (WINDOWS_RESERVED.test(name)) return `"${name}" is a reserved device name on Windows — rename it and try again`;
   return null;
 }
 
