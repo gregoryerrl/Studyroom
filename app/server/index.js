@@ -9,7 +9,7 @@ import {
 import * as store from "./store.js";
 import { buildSystemPrompt, defaultTitle } from "./prompts.js";
 import { runTurn, toolLabel } from "./claude.js";
-import { transcribe, findStrayJob } from "./transcribe.js";
+import { transcribe, findStrayJob, pickEngine, engineError } from "./transcribe.js";
 
 const HERE = import.meta.dirname;
 const ROOT = path.resolve(process.env.STUDYROOM_DIR || path.join(HERE, "..", ".."));
@@ -557,6 +557,13 @@ app.post("/api/subjects/:s/transcribe", async (req, res) => {
   if (transcribing) return res.status(409).json({ error: `already transcribing ${transcribing.file} — wait or cancel it` });
   const stray = await findStrayJob();
   if (stray) return res.status(409).json({ error: `a transcription (pid ${stray}) is already running outside this server — wait for it or stop it` });
+  // Resolved HERE, and once: this is the last point at which a plain status code can still be sent
+  // (the lock below is only cleared inside settle(), and the NDJSON head goes out right after it,
+  // so a `return res.status(...)` past either line would strand the lock or throw HEADERS_SENT).
+  // Passing it down also keeps engine detection to a single site — two would be where the mlx and
+  // openai-whisper flag dialects eventually drift apart.
+  const engine = pickEngine();
+  if (!engine) return res.status(400).json({ error: engineError() });
   // `subject` is recorded so the file/subject mutation routes can 409 against a running job.
   transcribing = { subject: subject.name, file, cancel() {} }; // reserve before any await below
 
@@ -578,7 +585,7 @@ app.post("/api/subjects/:s/transcribe", async (req, res) => {
   };
 
   const job = transcribe(
-    { subjectDir: dir, relPath: file, language, translate },
+    { subjectDir: dir, relPath: file, language, translate, engine },
     {
       progress: (p) => send({ kind: "progress", ...p }),
       done: ({ path: outPath }) => settle({ kind: "done", path: outPath }),
