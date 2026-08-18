@@ -40,6 +40,27 @@ export function nameError(name) {
   return null;
 }
 
+// Windows rejects these outright, in filenames and directory names alike. macOS and Linux accept
+// all of them, which is the problem: this repo is meant to be cloned on any of the three, and a
+// subject folder created here with a colon in it makes `git checkout` fail there.
+const WINDOWS_ILLEGAL = /[<>:"|?*]/;
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+
+/**
+ * Why `name` would not survive a Windows checkout of this repo, or null if it would.
+ *
+ * Deliberately SEPARATE from nameError, and applied only when CREATING or RENAMING — never to the
+ * listing filter, and never to a rename's SOURCE. A name that is already on disk has to stay
+ * listable and has to stay renameable, or the app would be unable to fix the very thing it is
+ * warning about.
+ */
+export function portabilityError(name) {
+  if (WINDOWS_ILLEGAL.test(name)) return 'name cannot contain any of < > : " | ? * (Windows rejects them)';
+  if (/[. ]$/.test(name)) return "name cannot end with a dot or a space (Windows strips them)";
+  if (WINDOWS_RESERVED.test(name)) return `"${name}" is a reserved device name on Windows`;
+  return null;
+}
+
 /** Control characters (U+0000 through U+001F) are legal in POSIX filenames and wreck every display. */
 function hasControlChar(s) {
   for (const ch of s) if (ch.codePointAt(0) < 0x20) return true;
@@ -158,13 +179,16 @@ export async function fileEntry(dir, rel) {
  * Resolve a client-supplied relative path for a WRITE inside a subject → { abs, parent, rel }.
  * Throws an Error carrying .status.
  *
+ * `portable: true` additionally rejects segments a Windows checkout could not hold. Pass it for a
+ * DESTINATION only — a rename's source must stay resolvable so a bad name can still be fixed.
+ *
  * The read route (/files/:s/*) realpaths the TARGET, which on a write does not exist yet. So this
  * realpaths the PARENT and requires that to sit inside the subject's real dir, then rebuilds abs
  * from the real parent — a symlinked intermediate directory therefore cannot redirect the write.
  * Both sides must be real paths: on macOS /tmp is itself a symlink to /private/tmp, so comparing a
  * real path against a raw one 403s a perfectly legitimate location.
  */
-export async function resolveInSubject(dir, rel, { mkdirs = false } = {}) {
+export async function resolveInSubject(dir, rel, { mkdirs = false, portable = false } = {}) {
   const parts = String(rel ?? "").split("/").filter((p) => p.length > 0);
   if (parts.length === 0) throw httpError(400, "file path required");
   for (const part of parts) {
@@ -172,6 +196,12 @@ export async function resolveInSubject(dir, rel, { mkdirs = false } = {}) {
     // would be invisible in the UI anyway, since walk() skips them.
     if (part.startsWith(".")) throw httpError(400, "path segments cannot start with '.'");
     if (part.includes("\\")) throw httpError(400, "path cannot contain a backslash");
+    // Also stops a Windows drive-relative segment ("C:notes.md"), which path.resolve would send to
+    // that drive's own cwd. The containment check below already 403s it; this makes it say why.
+    if (portable) {
+      const bad = portabilityError(part);
+      if (bad) throw httpError(400, bad);
+    }
     if (part.length > MAX_NAME) throw httpError(400, `each path segment must be ${MAX_NAME} characters or fewer`);
     if (hasControlChar(part)) throw httpError(400, "path cannot contain control characters");
   }

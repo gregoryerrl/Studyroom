@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import path from "node:path";
 import {
-  listSubjects, subjectDir, listFiles, fileEntry, fileType, findSubject, nameError, resolveInSubject,
+  listSubjects, subjectDir, listFiles, fileEntry, fileType, findSubject, nameError, portabilityError, resolveInSubject,
 } from "./subjects.js";
 import * as store from "./store.js";
 import { buildSystemPrompt, defaultTitle } from "./prompts.js";
@@ -110,7 +110,7 @@ app.put("/api/subjects/:s/files/*path", async (req, res) => {
   if (!subject) return;
   let target;
   try {
-    target = await resolveInSubject(subject.dir, relParam(req), { mkdirs: true });
+    target = await resolveInSubject(subject.dir, relParam(req), { mkdirs: true, portable: true });
   } catch (err) {
     return sendError(res, err);
   }
@@ -162,7 +162,7 @@ app.patch("/api/subjects/:s/files/*path", jsonBody, async (req, res) => {
   let from, to;
   try {
     from = await resolveInSubject(subject.dir, relParam(req));
-    to = await resolveInSubject(subject.dir, req.body?.path, { mkdirs: true });
+    to = await resolveInSubject(subject.dir, req.body?.path, { mkdirs: true, portable: true });
   } catch (err) {
     return sendError(res, err);
   }
@@ -229,7 +229,7 @@ app.get("/api/subjects", async (req, res) => {
 
 app.post("/api/subjects", async (req, res) => {
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
-  const bad = nameError(name);
+  const bad = nameError(name) ?? portabilityError(name);
   if (bad) return res.status(400).json({ error: bad });
   const clash = await findSubject(SUBJECTS, name);
   if (clash) return res.status(409).json({ error: `a subject named ${clash} already exists` });
@@ -245,7 +245,7 @@ app.patch("/api/subjects/:s", async (req, res) => {
   const subject = await requireSubject(req, res);
   if (!subject) return;
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
-  const bad = nameError(name);
+  const bad = nameError(name) ?? portabilityError(name);
   if (bad) return res.status(400).json({ error: bad });
   if (name === subject.name) return res.json(await subjectRecord(name));
   // findSubject matches case-insensitively, so a clash resolving to THIS subject is a case-only
