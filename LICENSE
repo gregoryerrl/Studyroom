@@ -1,7 +1,7 @@
 SCOPE OF THIS LICENSE
 
 The MIT License below covers the Studyroom application and the author's own
-writing: `app/`, `start`, and `docs/`.
+writing: `app/`, `start`, `studyroom.cmd`, and `docs/`.
 
 It does NOT cover the course materials under `subjects/` — lecture slides,
 handouts, syllabi, textbooks, recordings and their transcripts. All rights in

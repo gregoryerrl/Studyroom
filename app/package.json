@@ -4,6 +4,7 @@
   "private": true,
   "license": "MIT",
   "type": "module",
+  "engines": { "node": ">=22" },
   "description": "Local study web app over ~/Studyroom — viewer + per-subject study chats via the claude CLI",
   "scripts": {
     "start": "node server/index.js"

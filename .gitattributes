@@ -1,0 +1,4 @@
+# Scoped on purpose. A blanket `* text=auto` would rewrite line endings across subjects/ and docs/
+# on the next Windows checkout — a large, meaningless diff over committed course material.
+start		text eol=lf
+*.cmd		text eol=crlf
