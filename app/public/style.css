@@ -383,6 +383,142 @@ body.resizing-h { cursor: row-resize; user-select: none; }
   tab-size: 2;
 }
 .editor:focus { outline: none; }
+
+/* Images preview like any other material — contained, centred, never upscaled past their own pixels. */
+.preview-body.kind-image, .companion-body.kind-image {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 1rem;
+}
+.preview-body.kind-image img, .companion-body.kind-image img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
+}
+
+/* Pen notes. The surface fills the pane the way the textarea does, so switching between a typed and
+   a handwritten note isn't a change of shape. */
+.preview-body.kind-draw, .companion-body.kind-draw { padding: 0; overflow: hidden; }
+.draw { display: flex; flex-direction: column; height: 100%; background: var(--surface); }
+.draw:focus { outline: none; }
+.draw-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+}
+.draw-bar .btn.on { border-color: var(--accent); background: var(--accent-soft); }
+.draw-sep { width: 1px; height: 1.1rem; background: var(--rule); margin: 0 0.15rem; }
+.draw-swatches { display: inline-flex; gap: 0.3rem; }
+.draw-ink {
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.draw-ink.on { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The presets are the quick path; this is the "any colour you like" escape hatch beside them. */
+.draw-picker {
+  width: 1.5rem;
+  height: 1.35rem;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+.draw-size { width: 5.5rem; }
+.draw-size-out { min-width: 1.2rem; color: var(--muted); font-size: 0.75rem; text-align: right; }
+.draw-body { display: flex; flex: 1; min-height: 0; }
+/* The paper controls: zoom, orientation, sheets. Separate from the top bar, which is about ink. */
+.draw-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+  width: 6.2rem;
+  padding: 0.5rem 0.4rem;
+  border-right: 1px solid var(--rule);
+  overflow-y: auto;
+}
+.draw-rail .btn { text-align: center; }
+.draw-rail .btn.on { border-color: var(--accent); background: var(--accent-soft); }
+.draw-rail-sep { height: 1px; background: var(--rule); margin: 0.25rem 0; }
+.draw-zoom { text-align: center; font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.draw-sheets { text-align: center; font-size: 0.72rem; color: var(--muted); }
+/* Sheet tabs. Sheets are separate files, so this is a file switcher wearing a notebook's clothes. */
+.draw-tabs {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  padding: 0.4rem 0.6rem;
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+}
+.draw-tabs .btn { min-width: 2.4rem; text-align: center; }
+.draw-tabs .btn.on { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+/* The scrolling viewport. The sheet inside it is the size of the DOCUMENT, so the paper runs the
+   full length of the note instead of stopping where the pane happens to end. */
+.draw-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  background: #e9e5db;
+  padding: 1rem;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+.draw-sheet { position: relative; flex: none; box-shadow: 0 1px 6px rgba(35, 39, 46, 0.18); }
+/* touch-action is what stops a stylus stroke from scrolling the pane instead of drawing on it. */
+.draw-canvas { display: block; touch-action: none; cursor: crosshair; }
+/* The tools that draw their own footprint take the system cursor out of the picture. */
+.draw-canvas.hide-cursor { cursor: none; }
+/* Sits on the sheet, not the viewport, so it keeps up when you scroll down the page. */
+.draw-cursor { position: absolute; left: 0; top: 0; pointer-events: none; opacity: 0; }
+.draw-cursor.on { opacity: 1; }
+.draw-cursor > * { display: none; }
+.draw-cursor[data-shape="nib"] .nib-halo, .draw-cursor[data-shape="nib"] .nib-line { display: block; }
+.draw-cursor[data-shape="ring"] .nib-ring { display: block; }
+.nib-halo { stroke: #fff; stroke-width: 7; stroke-linecap: butt; }
+.nib-line { stroke-width: 4; stroke-linecap: butt; }
+.nib-ring { fill: none; stroke: var(--ink); stroke-width: 1; stroke-dasharray: 3 3; }
+
+/* Dropdown menus. The + Note buttons are the only ones so far; .menu-wrap is the positioning parent. */
+.menu-wrap { position: relative; display: inline-block; }
+.caret { font-size: 0.6rem; }
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 11.5rem;
+  padding: 0.2rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(35, 39, 46, 0.12);
+}
+.menu button {
+  display: block;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.menu button small { display: block; color: var(--muted); font-size: 0.72rem; }
+.menu button:hover, .menu button:focus-visible { background: var(--accent-soft); outline: none; }
 .file-rename-input {
   flex: 1;
   min-width: 0;
@@ -620,4 +756,9 @@ a.btn { display: inline-block; text-decoration: none; }
   .preview { min-height: 75vh; }
   .companion { flex-basis: 45vh; border-top: 1px solid var(--rule); }
   .chat { min-height: 30vh; border-top: 1px solid var(--rule); }
+  /* Stacked, the panes have no definite height — they grow with what is in them, which is fine for
+     a transcript but not for a pen note: a three-sheet document would make the surface 6000px tall
+     and the sheet would scroll the whole PAGE instead of itself, taking the toolbar and the zoom
+     rail off-screen with it. A definite height here puts the scrolling back inside the paper. */
+  .draw-scroll { max-height: 70vh; }
 }

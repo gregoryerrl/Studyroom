@@ -4,9 +4,28 @@ set -euo pipefail
 cd "$(dirname "$0")/app"
 URL="http://localhost:4321"
 
+# Open a URL in the default browser, whatever platform this is. NEVER fatal: under `set -e` a
+# missing opener used to abort the script, and because the EXIT trap below kills the server, that
+# turned "I couldn't open your browser" into "the app didn't start at all" — measured on Windows,
+# where `open` does not exist and ./start left nothing running.
+launch() {
+  if command -v open >/dev/null 2>&1; then                        # macOS
+    open "$1" || true
+  elif command -v xdg-open >/dev/null 2>&1; then                  # Linux
+    xdg-open "$1" >/dev/null 2>&1 || true
+  elif command -v powershell.exe >/dev/null 2>&1; then            # Windows (Git Bash / WSL)
+    powershell.exe -NoProfile -Command "Start-Process '$1'" >/dev/null 2>&1 || true
+  elif command -v cmd.exe >/dev/null 2>&1; then
+    # The doubled slash stops MSYS rewriting /c into a drive path on its way to cmd.
+    cmd.exe //c start "" "$1" >/dev/null 2>&1 || true
+  else
+    echo "Open $URL in your browser."
+  fi
+}
+
 if curl -sf -o /dev/null "$URL/api/subjects"; then
   echo "Studyroom is already running at $URL"
-  open "$URL"
+  launch "$URL"
   exit 0
 fi
 
@@ -20,5 +39,5 @@ for _ in $(seq 1 50); do
   curl -sf -o /dev/null "$URL/api/subjects" && break
   sleep 0.2
 done
-open "$URL"
+launch "$URL"
 wait "$SERVER"

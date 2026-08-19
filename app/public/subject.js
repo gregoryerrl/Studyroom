@@ -231,9 +231,11 @@ function renderDeck(deck, body) {
 let currentDeck = null; // parsed deck for the previewed file, or null — set only after the fetch
 let showCards = true;   // deck view vs raw markdown; one flag, persists across file selections
 
-async function renderPreview(entry) {
+async function renderPreview(entry, { bust = false } = {}) {
   const body = $("#preview");
-  const url = fileUrl(entry.path);
+  // Saving a pen note rewrites the SAME path, so without a cache-buster the <img> re-renders the
+  // copy the browser already had and your last few strokes look like they were never saved.
+  const url = fileUrl(entry.path) + (bust ? `?v=${entry.mtime}` : "");
   currentDeck = null; // deck-ness is unknowable until the text arrives; assume not until proven
   $("#preview-title").textContent = entry.name;
   $("#preview-meta").textContent = `${fmtSize(entry.size)} · ${entry.path}`;
@@ -254,6 +256,9 @@ async function renderPreview(entry) {
       break;
     case "html":
       body.innerHTML = `<iframe sandbox src="${esc(url)}" title="${esc(entry.name)}"></iframe>`;
+      break;
+    case "image":
+      body.innerHTML = `<img src="${esc(url)}" alt="${esc(entry.name)}">`;
       break;
     case "markdown":
     case "text": {
@@ -1022,8 +1027,26 @@ addEventListener("resize", () => applyLayout());
 
 const EDITABLE = new Set(["markdown", "text", "html"]); // mirrors isEditable() on the server
 const EDIT_MAX = 1024 * 1024;                            // a 50 MB text file has no business in a <textarea>
+const DRAW_MAX = 16 * 1024 * 1024;                       // a phone photo is not a pen note
 
-let editing = null; // { path, original } while the editor is open
+/**
+ * Keyed on the EXTENSION, not on the `image` type. Only a PNG can carry the stroke chunk back out
+ * again — a JPEG can be drawn on perfectly well, but saving would have to re-encode it as a PNG
+ * under a name that still says .jpg, and silently changing someone's file format is worse than not
+ * offering the button.
+ */
+const isDrawable = (entry) => Boolean(entry) && /\.png$/i.test(entry.name);
+
+// Sheets live INSIDE one pen note, not beside it: a note is a single .png whose metadata carries
+// every sheet, and the tab strip switches between them in memory. Naming sheets as separate files
+// was tried and dropped — it put N rows in Materials for one note, and made the sheet controls
+// depend on a filename convention that any note made before it (or any dropped image) lacked.
+
+let editing = null;   // { path, kind: "text" | "draw", original } while an editor is open.
+                      // For "text", `original` is the text at open; for "draw", the surface's rev
+                      // counter at open — both exist only to answer "has this changed?".
+let drawMain = null;  // the Draw surface in the preview pane, while editing.kind === "draw"
+let drawComp = null;  // the same, in the companion pane
 
 const fileApi = (relPath, query = "") =>
   `/api/subjects/${encodeURIComponent(subject)}/files/${relPath.split("/").map(encodeURIComponent).join("/")}${query}`;
@@ -1071,7 +1094,8 @@ function syncFileButtons(entry) {
   cards.hidden = open || !currentDeck;
   cards.textContent = showCards ? "Markdown" : "Cards";
   cards.title = showCards ? "Show the raw markdown instead" : "Show these Q:/A: pairs as cards";
-  $("#file-edit").hidden = open || !entry || !EDITABLE.has(entry.type);
+  $("#file-edit").hidden = open || !entry || !(EDITABLE.has(entry.type) || isDrawable(entry));
+  $("#file-edit").textContent = entry && isDrawable(entry) && !EDITABLE.has(entry.type) ? "Draw" : "Edit";
   $("#file-save").hidden = !open;
   $("#file-edit-cancel").hidden = !open;
   $("#file-rename").hidden = open || !entry;
@@ -1088,12 +1112,44 @@ function syncFileButtons(entry) {
   }
 }
 
-/** True if it is safe to leave the editor — closes it, asking first only when the text changed. */
+/**
+ * Has either surface got unsaved work on it? Both editors now come in two flavours — a textarea
+ * compared against its opening text, a canvas compared against its opening revision — and four
+ * separate places need the answer (leaveEditor, leaveCompanion, leaveDocs, beforeunload). Deriving
+ * it in each of them is how one of them ends up forgetting a case.
+ */
+function mainDirty() {
+  if (!editing) return false;
+  if (editing.kind === "draw") return Boolean(drawMain) && drawMain.rev !== editing.original;
+  const ta = $("#preview .editor");
+  return Boolean(ta) && ta.value !== editing.original;
+}
+
+function compDirty() {
+  if (!companionEditing) return false;
+  if (companionEditing.kind === "draw") return Boolean(drawComp) && drawComp.rev !== companionEditing.original;
+  const ta = $("#companion-body .editor");
+  return Boolean(ta) && ta.value !== companionEditing.original;
+}
+
+/** Drop an editor's state. The surface owns a ResizeObserver, so it has to be told to let go. */
+function closeMainEditor() {
+  if (drawMain) drawMain.destroy();
+  drawMain = null;
+  editing = null;
+}
+
+function closeCompEditor() {
+  if (drawComp) drawComp.destroy();
+  drawComp = null;
+  companionEditing = null;
+}
+
+/** True if it is safe to leave the editor — closes it, asking first only when something changed. */
 function leaveEditor() {
   if (!editing) return true;
-  const ta = $("#preview .editor");
-  if (ta && ta.value !== editing.original && !confirm("Discard your unsaved changes?")) return false;
-  editing = null;
+  if (mainDirty() && !confirm("Discard your unsaved changes?")) return false;
+  closeMainEditor();
   return true;
 }
 
@@ -1135,9 +1191,42 @@ async function uploadFiles(fileList) {
   fileStatus(parts.join(" · "), failed.length > 0);
 }
 
-async function createFile(rawName) {
-  const name = /\.[^.]+$/.test(rawName) ? rawName : `${rawName}.md`; // a note without an extension is markdown
-  const res = await send(fileApi(name), { method: "PUT", headers: { "Content-Type": "text/plain" }, body: "" });
+/**
+ * The body and default extension for a new note of each kind. A pen note is born as a real PNG —
+ * an empty ruled page — rather than a zero-byte placeholder, so that every path downstream (the
+ * listing, the preview, Claude reading it) sees a valid image from the first moment it exists.
+ */
+/**
+ * The suggested name for a new note: [subject code]-[kind]-[date], the same on both surfaces so a
+ * folder of notes sorts by subject then kind then day however they were made.
+ *
+ * A second note of the same kind on the same day would collide with the first, and the PUT route
+ * answers 409 for that — so the suffix is added here rather than making you discover the clash and
+ * rename by hand.
+ */
+function defaultNoteName(mode) {
+  const ext = mode === "draw" ? ".png" : ".md";
+  const base = `${subject}-${mode === "draw" ? "sketch" : "markdown"}-${todayISO()}`;
+  if (!entries.some((e) => e.path === base + ext)) return base + ext;
+  let n = 2;
+  while (entries.some((e) => e.path === `${base}-${n}${ext}`)) n += 1;
+  return `${base}-${n}${ext}`;
+}
+
+/**
+ * A pen note is born as one blank A4 sheet, portrait — a real page, not a pane-shaped scrap. The
+ * surface's own rail changes orientation, zoom and sheet count from there, and all of it is saved
+ * back into the file.
+ */
+async function newNoteBody(mode) {
+  if (mode !== "draw") return { ext: ".md", body: "", headers: { "Content-Type": "text/plain" } };
+  return { ext: ".png", body: await Draw.blank(false), headers: {} };
+}
+
+async function createFile(rawName, mode = "md") {
+  const { ext, body, headers } = await newNoteBody(mode);
+  const name = /\.[^.]+$/.test(rawName) ? rawName : `${rawName}${ext}`; // no extension means the kind you picked
+  const res = await send(fileApi(name), { method: "PUT", headers, body });
   if (!res.ok) return fileStatus(await errorText(res), true);
   fileStatus("");
   $("#new-file").hidden = true;
@@ -1146,7 +1235,9 @@ async function createFile(rawName) {
   const entry = entries.find((e) => e.path === name);
   if (entry) {
     select(entry);
-    openEditor(entry); // a new note opens straight into the editor — that is the point of it
+    // A new note opens straight into writing — that is the point of it, on either surface.
+    if (mode === "draw") guard(openDrawEditor(entry));
+    else openEditor(entry);
   }
 }
 
@@ -1161,7 +1252,7 @@ async function openEditor(entry) {
   } catch (err) {
     return fileStatus(`Could not open ${entry.name}: ${err.message}`, true);
   }
-  editing = { path: entry.path, original: text };
+  editing = { path: entry.path, kind: "text", original: text };
   const ta = document.createElement("textarea");
   ta.className = "editor";
   ta.spellcheck = false;
@@ -1183,10 +1274,83 @@ async function saveEditor() {
   });
   if (!res.ok) return fileStatus(await errorText(res), true);
   const path = editing.path;
-  editing = null;
+  closeMainEditor();
   await refreshFiles();
   const entry = entries.find((e) => e.path === path);
   if (entry) renderPreview(entry);
+  fileStatus("Saved.");
+}
+
+/**
+ * Load a PNG into a drawing surface. Mirrors openEditor() on the same pane.
+ *
+ * Two ways in. If the file carries a stroke chunk it reopens as vectors — every stroke individually
+ * undoable, however long ago it was drawn. If it doesn't (a diagram someone dropped in, or a note
+ * whose metadata another program stripped) the image becomes a fixed backdrop and new strokes go on
+ * top, which is how paper behaves anyway.
+ */
+async function loadSurface(entry, container, onChange) {
+  if (entry.size > DRAW_MAX) throw new Error(`${entry.name} is too large to draw on (${fmtSize(entry.size)}).`);
+  const res = await send(fileUrl(entry.path));
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const buffer = await res.arrayBuffer();
+  const saved = Draw.readStrokes(buffer);
+  let opts = saved || {}; // { sheets, page } — the whole notebook travels inside the one file
+  if (!saved) {
+    const img = new Image();
+    const url = URL.createObjectURL(new Blob([buffer], { type: "image/png" }));
+    try {
+      await new Promise((ok, no) => {
+        img.onload = ok;
+        img.onerror = () => no(new Error("could not decode this image"));
+        img.src = url;
+      });
+    } finally {
+      URL.revokeObjectURL(url); // decoded into the <img> already; holding the blob alive leaks it
+    }
+    // An image with no stroke data becomes the paper itself, at its own pixel size — a scanned
+    // handout keeps its proportions instead of being cropped into an A4 sheet.
+    opts = { backdrop: img, page: { w: img.naturalWidth, h: img.naturalHeight } };
+  }
+  // The surface builds and downloads the PDF itself — it is the thing holding the sheets. It only
+  // needs the note's name for the file, and a way to report back into the status line.
+  return Draw.open(container, {
+    ...opts,
+    onChange,
+    name: entry.name.replace(/\.[^.]+$/, ""),
+    onStatus: (message, isError) => fileStatus(message, isError),
+  });
+}
+
+async function openDrawEditor(entry) {
+  if (!isDrawable(entry)) return;
+  let surface;
+  const body = $("#preview");
+  const previous = body.className;
+  body.className = "preview-body kind-draw";
+  try {
+    surface = await loadSurface(entry, body, null);
+  } catch (err) {
+    body.className = previous;
+    renderPreview(entry);
+    return fileStatus(`Could not open ${entry.name}: ${err.message}`, true);
+  }
+  drawMain = surface;
+  editing = { path: entry.path, kind: "draw", original: surface.rev };
+  syncFileButtons(entry);
+}
+
+async function saveDrawEditor() {
+  if (!editing || editing.kind !== "draw" || !drawMain) return;
+  const blob = await drawMain.toBlob();
+  const res = await send(fileApi(editing.path, "?overwrite=1"), { method: "PUT", body: blob });
+  if (!res.ok) return fileStatus(await errorText(res), true);
+  const path = editing.path;
+  closeMainEditor();
+  await refreshFiles();
+  const entry = entries.find((e) => e.path === path);
+  // Cache-bust: the path is unchanged, so the browser would happily show the version it already has.
+  if (entry) renderPreview(entry, { bust: true });
   fileStatus("Saved.");
 }
 
@@ -1272,9 +1436,12 @@ let companionPath = null;     // what the companion body currently shows: a doc 
                               // pick-a-document hint, or null for a torn-down (closed) pane. The
                               // hint and "closed" have to be DIFFERENT states — collapsing them
                               // left a reopened companion blank instead of prompting (measured).
-let companionEditing = null;  // { path, original } while the companion editor is open
+let companionEditing = null;  // { path, kind, original } while the companion editor is open — same
+                              // shape as `editing`, see the note there
 
-const COMPANION_TYPES = new Set(["markdown", "text"]); // what reads sensibly under another document
+// What reads sensibly under another document. Images earn their place here for the sketch-while-you-
+// read case: a hand-drawn derivation under the PDF chapter it came from.
+const COMPANION_TYPES = new Set(["markdown", "text", "image"]);
 
 /** Options for the picker: every text-ish file except the one already on top of it. */
 function companionOptions() {
@@ -1296,7 +1463,8 @@ function renderCompanionPicker(chosen) {
 function syncCompanionButtons() {
   const editingHere = Boolean(companionEditing);
   const entry = entries.find((e) => e.path === companionPath);
-  $("#companion-edit").hidden = editingHere || !entry || !EDITABLE.has(entry.type);
+  $("#companion-edit").hidden = editingHere || !entry || !(EDITABLE.has(entry.type) || isDrawable(entry));
+  $("#companion-edit").textContent = entry && isDrawable(entry) && !EDITABLE.has(entry.type) ? "Draw" : "Edit";
   $("#companion-save").hidden = !editingHere;
   $("#companion-cancel").hidden = !editingHere;
   $("#companion-new").hidden = editingHere;
@@ -1309,15 +1477,15 @@ function syncCompanionButtons() {
   if (entry) open.href = fileUrl(entry.path);
   // Derived, never assumed: this function also runs on repaints that happen mid-edit (the Cards
   // toggle, a listing refresh), and force-clearing the marker there would deny live unsaved work.
-  const ta = $("#companion-body .editor");
-  $("#companion-dirty").hidden = !(editingHere && ta && ta.value !== companionEditing.original);
+  $("#companion-dirty").hidden = !compDirty();
 }
 
 /** Render one document into the companion body. Guarded against a slow fetch losing a race. */
-async function renderCompanionDoc(path) {
+async function renderCompanionDoc(path, { bust = false } = {}) {
   const body = $("#companion-body");
   companionPath = path || "";
   syncCompanionButtons();
+  body.className = "companion-body";
   if (!path) {
     body.innerHTML = `<p class="empty">Pick a document to show here — or press + Note to start a new one.</p>`;
     return;
@@ -1325,6 +1493,14 @@ async function renderCompanionDoc(path) {
   const entry = entries.find((e) => e.path === path);
   if (!entry) {
     body.innerHTML = `<p class="error">${esc(path)} is no longer in this subject.</p>`;
+    return;
+  }
+  // An image has no text to fetch and nothing to race over — render it and leave.
+  if (entry.type === "image") {
+    body.className = "companion-body kind-image";
+    const url = fileUrl(path) + (bust ? `?v=${entry.mtime}` : "");
+    body.innerHTML = `<img src="${esc(url)}" alt="${esc(entry.name)}">`;
+    syncCompanionButtons();
     return;
   }
   body.innerHTML = `<p class="empty">Loading…</p>`;
@@ -1365,7 +1541,7 @@ function syncCompanion() {
   if (!open) {
     if (companionPath !== null) {
       companionPath = null;
-      companionEditing = null;
+      closeCompEditor(); // a live surface here owns a ResizeObserver on a node about to be dropped
       $("#companion-body").replaceChildren();
     }
     return;
@@ -1397,7 +1573,7 @@ async function openCompanionEditor() {
   } catch (err) {
     return fileStatus(`Could not open ${entry.name}: ${err.message}`, true);
   }
-  companionEditing = { path: entry.path, original: text };
+  companionEditing = { path: entry.path, kind: "text", original: text };
   const ta = document.createElement("textarea");
   ta.className = "editor";
   ta.spellcheck = false;
@@ -1418,23 +1594,56 @@ async function saveCompanionEditor() {
   });
   if (!res.ok) return fileStatus(await errorText(res), true);
   const path = companionEditing.path;
-  companionEditing = null;
+  closeCompEditor();
   await refreshFiles();          // the size in the listing is now stale
   companionPath = null;          // force renderCompanionDoc to repaint from disk
   await renderCompanionDoc(path);
   fileStatus("Saved.");
 }
 
+/** The drawing surface, in the companion pane. Mirrors openDrawEditor() on the other one. */
+async function openCompanionDraw() {
+  const entry = entries.find((e) => e.path === companionPath);
+  if (!isDrawable(entry)) return;
+  const body = $("#companion-body");
+  let surface;
+  try {
+    body.className = "companion-body kind-draw";
+    // Every stroke re-runs the bar, so the "unsaved" marker tracks the canvas the way it already
+    // tracks the textarea's input event.
+    surface = await loadSurface(entry, body, syncCompanionButtons);
+  } catch (err) {
+    companionPath = null;
+    await renderCompanionDoc(entry.path);
+    return fileStatus(`Could not open ${entry.name}: ${err.message}`, true);
+  }
+  drawComp = surface;
+  companionEditing = { path: entry.path, kind: "draw", original: surface.rev };
+  syncCompanionButtons();
+}
+
+async function saveCompanionDraw() {
+  if (!companionEditing || companionEditing.kind !== "draw" || !drawComp) return;
+  const blob = await drawComp.toBlob();
+  const res = await send(fileApi(companionEditing.path, "?overwrite=1"), { method: "PUT", body: blob });
+  if (!res.ok) return fileStatus(await errorText(res), true);
+  const path = companionEditing.path;
+  closeCompEditor();
+  await refreshFiles();
+  companionPath = null;
+  await renderCompanionDoc(path, { bust: true });
+  fileStatus("Saved.");
+}
+
 /** A new note, created and opened for writing without disturbing the document above it. */
-async function createCompanionNote() {
-  const main = entries.find((e) => e.path === selectedPath);
-  const suggestion = `notes-${slugify(main?.name || "notes")}-${todayISO()}.md`;
-  const raw = prompt("Name for the new note:", suggestion);
+async function createCompanionNote(mode = "md") {
+  const raw = prompt("Name for the new note:", defaultNoteName(mode));
   if (raw === null) return;
   const trimmed = raw.trim();
   if (!trimmed) return;
-  const name = /\.[^.]+$/.test(trimmed) ? trimmed : `${trimmed}.md`;
-  const res = await send(fileApi(name), { method: "PUT", headers: { "Content-Type": "text/plain" }, body: "" });
+  const { ext, body, headers } = await newNoteBody(mode);
+  const name = /\.[^.]+$/.test(trimmed) ? trimmed : `${trimmed}${ext}`;
+  const res = await send(fileApi(name), { method: "PUT", headers, body });
   if (!res.ok) return fileStatus(await errorText(res), true);
   fileStatus("");
   await refreshFiles();
@@ -1443,15 +1652,16 @@ async function createCompanionNote() {
   companions.set(selectedPath, entry.path);
   renderCompanionPicker(entry.path);
   await renderCompanionDoc(entry.path);
-  await openCompanionEditor(); // straight into typing — that is the whole point of the button
+  // Straight into writing — that is the whole point of the button.
+  if (mode === "draw") await openCompanionDraw();
+  else await openCompanionEditor();
 }
 
-/** True if it is safe to leave the companion editor; asks only when the text actually changed. */
+/** True if it is safe to leave the companion editor; asks only when something actually changed. */
 function leaveCompanion() {
   if (!companionEditing) return true;
-  const ta = $("#companion-body .editor");
-  if (ta && ta.value !== companionEditing.original && !confirm("Discard your unsaved changes to the companion note?")) return false;
-  companionEditing = null;
+  if (compDirty() && !confirm("Discard your unsaved changes to the companion note?")) return false;
+  closeCompEditor();
   return true;
 }
 
@@ -1460,16 +1670,46 @@ function leaveCompanion() {
  * would leave a textarea on screen that nothing tracks any more — live-looking and unsavable.
  */
 function leaveDocs() {
-  const mainTa = $("#preview .editor");
-  const compTa = $("#companion-body .editor");
-  const mainDirty = editing && mainTa && mainTa.value !== editing.original;
-  const compDirty = companionEditing && compTa && compTa.value !== companionEditing.original;
-  if (mainDirty && !confirm("Discard your unsaved changes?")) return false;
-  if (compDirty && !confirm("Discard your unsaved changes to the companion note?")) return false;
-  editing = null;
-  companionEditing = null;
+  const main = mainDirty();
+  const comp = compDirty();
+  if (main && !confirm("Discard your unsaved changes?")) return false;
+  if (comp && !confirm("Discard your unsaved changes to the companion note?")) return false;
+  closeMainEditor();
+  closeCompEditor();
   return true;
 }
+
+// ---- wiring: the two + Note menus ----
+//
+// One open menu at a time, closed by a click anywhere else or by Escape. Defined here rather than
+// beside the file wiring below because the companion block calls it first, and `menus` is a const.
+const menus = [];
+function closeMenus() {
+  for (const m of menus) {
+    m.menu.hidden = true;
+    m.button.setAttribute("aria-expanded", "false");
+  }
+}
+function wireMenu(buttonId, menuId, onPick) {
+  const button = $(buttonId);
+  const menu = $(menuId);
+  menus.push({ button, menu });
+  button.addEventListener("click", (e) => {
+    e.stopPropagation(); // or the document handler below closes it again in the same click
+    const opening = menu.hidden;
+    closeMenus();
+    menu.hidden = !opening;
+    button.setAttribute("aria-expanded", String(opening));
+  });
+  menu.addEventListener("click", (e) => {
+    const item = e.target.closest("button[role=menuitem]");
+    if (!item) return;
+    closeMenus();
+    onPick(item.id.endsWith("-pen") ? "draw" : "md");
+  });
+}
+document.addEventListener("click", closeMenus);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenus(); });
 
 // ---- wiring: companion ----
 $("#companion-toggle").addEventListener("click", () => {
@@ -1495,9 +1735,14 @@ $("#companion-pick").addEventListener("change", (e) => {
   companions.set(selectedPath, e.target.value);
   renderCompanionDoc(e.target.value);
 });
-$("#companion-new").addEventListener("click", () => guard(createCompanionNote()));
-$("#companion-edit").addEventListener("click", () => guard(openCompanionEditor()));
-$("#companion-save").addEventListener("click", () => guard(saveCompanionEditor()));
+wireMenu("#companion-new", "#companion-new-menu", (mode) => guard(createCompanionNote(mode)));
+$("#companion-edit").addEventListener("click", () => {
+  const entry = entries.find((e) => e.path === companionPath);
+  if (!entry) return;
+  guard(isDrawable(entry) && !EDITABLE.has(entry.type) ? openCompanionDraw() : openCompanionEditor());
+});
+$("#companion-save").addEventListener("click", () =>
+  guard(companionEditing?.kind === "draw" ? saveCompanionDraw() : saveCompanionEditor()));
 $("#companion-cancel").addEventListener("click", () => {
   const path = companionEditing?.path;
   if (!leaveCompanion()) return;
@@ -1511,15 +1756,28 @@ $("#file-input").addEventListener("change", (e) => {
   guard(uploadFiles(e.target.files));
   e.target.value = ""; // so re-picking the same file fires 'change' again
 });
-$("#file-new").addEventListener("click", () => {
+let newFileMode = "md"; // which kind the #new-file form will create when it is submitted
+
+wireMenu("#file-new", "#file-new-menu", (mode) => {
+  newFileMode = mode;
   const form = $("#new-file");
-  form.hidden = !form.hidden;
-  if (!form.hidden) $("#new-file-name").focus();
+  const input = $("#new-file-name");
+  form.hidden = false;
+  // The name box is shared by both kinds, so it has to say which one it is about to make. It is
+  // prefilled rather than merely hinted, because the suggestion IS the naming scheme — typing over
+  // it is the exception.
+  // Always re-filled, never preserved: you just told the menu which kind you wanted, so a name left
+  // over from the other kind would carry the wrong extension.
+  const suggestion = defaultNoteName(mode);
+  input.placeholder = suggestion;
+  input.value = suggestion;
+  input.focus();
+  input.select();
 });
 $("#new-file").addEventListener("submit", (e) => {
   e.preventDefault();
   const name = $("#new-file-name").value.trim();
-  if (name) guard(createFile(name));
+  if (name) guard(createFile(name, newFileMode));
 });
 $("#new-file-cancel").addEventListener("click", () => { $("#new-file").hidden = true; fileStatus(""); });
 $("#new-file-name").addEventListener("keydown", (e) => {
@@ -1527,9 +1785,10 @@ $("#new-file-name").addEventListener("keydown", (e) => {
 });
 $("#file-edit").addEventListener("click", () => {
   const entry = entries.find((e) => e.path === selectedPath);
-  if (entry) guard(openEditor(entry));
+  if (!entry) return;
+  guard(isDrawable(entry) && !EDITABLE.has(entry.type) ? openDrawEditor(entry) : openEditor(entry));
 });
-$("#file-save").addEventListener("click", () => guard(saveEditor()));
+$("#file-save").addEventListener("click", () => guard(editing?.kind === "draw" ? saveDrawEditor() : saveEditor()));
 $("#file-edit-cancel").addEventListener("click", () => {
   const path = editing?.path;
   if (!leaveEditor()) return;
@@ -1570,11 +1829,7 @@ document.addEventListener("drop", (e) => {
 // A note editor that loses work on a stray Cmd-R is not a note editor. Only speaks up when dirty —
 // and it has to watch BOTH surfaces now, since the companion is where notes actually get typed.
 addEventListener("beforeunload", (e) => {
-  const ta = $("#preview .editor");
-  const cta = $("#companion-body .editor");
-  const dirty = (editing && ta && ta.value !== editing.original) ||
-                (companionEditing && cta && cta.value !== companionEditing.original);
-  if (dirty) e.preventDefault();
+  if (mainDirty() || compDirty()) e.preventDefault();
 });
 
 $("#chat-switcher").addEventListener("change", (e) => openChat(e.target.value));
