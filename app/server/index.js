@@ -4,12 +4,12 @@ import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import path from "node:path";
 import {
-  listSubjects, subjectDir, listFiles, fileEntry, fileType, findSubject, nameError, resolveInSubject,
+  listSubjects, subjectDir, listFiles, fileEntry, fileType, findSubject, nameError, portabilityError, resolveInSubject,
 } from "./subjects.js";
 import * as store from "./store.js";
 import { buildSystemPrompt, defaultTitle } from "./prompts.js";
 import { runTurn, toolLabel } from "./claude.js";
-import { transcribe, findStrayJob } from "./transcribe.js";
+import { transcribe, findStrayJob, pickEngine, engineError } from "./transcribe.js";
 
 const HERE = import.meta.dirname;
 const ROOT = path.resolve(process.env.STUDYROOM_DIR || path.join(HERE, "..", ".."));
@@ -110,7 +110,7 @@ app.put("/api/subjects/:s/files/*path", async (req, res) => {
   if (!subject) return;
   let target;
   try {
-    target = await resolveInSubject(subject.dir, relParam(req), { mkdirs: true });
+    target = await resolveInSubject(subject.dir, relParam(req), { mkdirs: true, portable: true });
   } catch (err) {
     return sendError(res, err);
   }
@@ -162,7 +162,7 @@ app.patch("/api/subjects/:s/files/*path", jsonBody, async (req, res) => {
   let from, to;
   try {
     from = await resolveInSubject(subject.dir, relParam(req));
-    to = await resolveInSubject(subject.dir, req.body?.path, { mkdirs: true });
+    to = await resolveInSubject(subject.dir, req.body?.path, { mkdirs: true, portable: true });
   } catch (err) {
     return sendError(res, err);
   }
@@ -229,7 +229,7 @@ app.get("/api/subjects", async (req, res) => {
 
 app.post("/api/subjects", async (req, res) => {
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
-  const bad = nameError(name);
+  const bad = nameError(name) ?? portabilityError(name);
   if (bad) return res.status(400).json({ error: bad });
   const clash = await findSubject(SUBJECTS, name);
   if (clash) return res.status(409).json({ error: `a subject named ${clash} already exists` });
@@ -245,7 +245,7 @@ app.patch("/api/subjects/:s", async (req, res) => {
   const subject = await requireSubject(req, res);
   if (!subject) return;
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
-  const bad = nameError(name);
+  const bad = nameError(name) ?? portabilityError(name);
   if (bad) return res.status(400).json({ error: bad });
   if (name === subject.name) return res.json(await subjectRecord(name));
   // findSubject matches case-insensitively, so a clash resolving to THIS subject is a case-only
@@ -560,6 +560,13 @@ app.post("/api/subjects/:s/transcribe", async (req, res) => {
   if (transcribing) return res.status(409).json({ error: `already transcribing ${transcribing.file} — wait or cancel it` });
   const stray = await findStrayJob();
   if (stray) return res.status(409).json({ error: `a transcription (pid ${stray}) is already running outside this server — wait for it or stop it` });
+  // Resolved HERE, and once: this is the last point at which a plain status code can still be sent
+  // (the lock below is only cleared inside settle(), and the NDJSON head goes out right after it,
+  // so a `return res.status(...)` past either line would strand the lock or throw HEADERS_SENT).
+  // Passing it down also keeps engine detection to a single site — two would be where the mlx and
+  // openai-whisper flag dialects eventually drift apart.
+  const engine = pickEngine();
+  if (!engine) return res.status(400).json({ error: engineError() });
   // `subject` is recorded so the file/subject mutation routes can 409 against a running job.
   transcribing = { subject: subject.name, file, cancel() {} }; // reserve before any await below
 
@@ -581,7 +588,7 @@ app.post("/api/subjects/:s/transcribe", async (req, res) => {
   };
 
   const job = transcribe(
-    { subjectDir: dir, relPath: file, language, translate },
+    { subjectDir: dir, relPath: file, language, translate, engine },
     {
       progress: (p) => send({ kind: "progress", ...p }),
       done: ({ path: outPath }) => settle({ kind: "done", path: outPath }),

@@ -1,14 +1,106 @@
-import { spawn, execFile } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createInterface } from "node:readline";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { IS_WINDOWS, findExecutable, spawnCommand, killTree } from "./platform.js";
 
-const MODEL = "mlx-community/whisper-large-v3-turbo";
+/**
+ * The two transcription engines and everything that differs between them. mlx-whisper is
+ * Apple-Silicon-only — that is what MLX *is* — so every other OS needs openai-whisper, which runs
+ * the same weights behind a different CLI dialect.
+ *
+ * Read out of openai-whisper 20250625's own source rather than guessed: flags are underscore-style;
+ * there is no `--output_name` because `utils.py:94-98` writes `<output_dir>/<audio stem>.<ext>`,
+ * and `stem` below is exactly that basename, so the SRT lands where the mlx branch puts it;
+ * `--model turbo` is the same large-v3-turbo checkpoint (`__init__.py:30-31`); and `--verbose`
+ * defaults to True, so the per-segment lines this file parses are printed either way.
+ *
+ * Both set condition-on-previous-text OFF. Whisper feeds each segment's text back as context by
+ * default, which is what seeds its repetition loops — and on Lecture 1 a loop derailed the decoder
+ * so badly that it stopped at 42:33 of 73:31 and still exited 0. Measured directly: with the flag
+ * the same file transcribes straight past that point. Costs a little cross-segment coherence; buys
+ * the other 42% of the lecture.
+ */
+const ENGINES = {
+  mlx: {
+    bin: "mlx_whisper",
+    model: "mlx-community/whisper-large-v3-turbo",
+    // huggingface_hub checks the model repo online BEFORE falling back to the cache. On a host with
+    // a dead IPv6 route that hangs in SYN_SENT — observed here as a transcription pinned at 0% CPU
+    // for 6+ minutes having burnt 0.65s total. The model is cached and §6.5 says this runs fully
+    // offline, so force it.
+    env: { HF_HUB_OFFLINE: "1" },
+    args: (o) => [
+      o.input,
+      "--model", o.model,
+      "--output-dir", o.outDir,
+      "--output-name", o.stem, // explicit, so the SRT path is known rather than derived
+      "--output-format", "srt",
+      "--verbose", "True",
+      "--condition-on-previous-text", "False",
+      ...(o.language ? ["--language", o.language] : []),
+      ...(o.translate ? ["--task", "translate"] : []),
+    ],
+  },
+  whisper: {
+    bin: "whisper",
+    model: "turbo",
+    env: {},
+    args: (o) => [
+      o.input,
+      "--model", o.model,
+      "--output_dir", o.outDir,
+      "--output_format", "srt",
+      "--verbose", "True",
+      "--condition_on_previous_text", "False",
+      ...(o.language ? ["--language", o.language] : []),
+      ...(o.translate ? ["--task", "translate"] : []),
+    ],
+  },
+};
+
+/**
+ * Which engine this machine will use: `STUDYROOM_WHISPER` pins one by name, otherwise the first
+ * one actually installed. `STUDYROOM_WHISPER_MODEL` overrides the model — a CPU-only box wants
+ * `small`, not `turbo`. Returns null when there is nothing to run, which is a supported answer:
+ * the route turns it into one sentence instead of an ENOENT from inside a stream.
+ */
+export function pickEngine() {
+  const wanted = process.env.STUDYROOM_WHISPER;
+  for (const name of wanted ? [wanted] : Object.keys(ENGINES)) {
+    // hasOwn, not truthiness: ENGINES.constructor and ENGINES.__proto__ are INHERITED and truthy,
+    // so a bare lookup hands back an object with no `bin` and findExecutable(undefined) throws —
+    // a 500 out of the one route whose whole job is to answer 400 with advice. Reproduced.
+    if (!Object.hasOwn(ENGINES, name)) continue;
+    const engine = ENGINES[name];
+    // Auto-detection only. MLX runs on Apple Silicon and nowhere else, so an Intel Mac (or Node
+    // under Rosetta) with mlx_whisper on PATH would pick it and die in a Python traceback instead
+    // of falling through to openai-whisper. An explicit STUDYROOM_WHISPER=mlx still wins.
+    if (!wanted && name === "mlx" && process.arch !== "arm64") continue;
+    if (!findExecutable(engine.bin)) continue;
+    return { name, ...engine, model: process.env.STUDYROOM_WHISPER_MODEL || engine.model };
+  }
+  return null;
+}
+
+/** Why pickEngine() came back empty, in one sentence the user can act on. */
+export function engineError() {
+  const wanted = process.env.STUDYROOM_WHISPER;
+  if (wanted && !Object.hasOwn(ENGINES, wanted)) return `STUDYROOM_WHISPER=${wanted} is not a known engine — use "mlx" or "whisper".`;
+  if (wanted) return `STUDYROOM_WHISPER=${wanted} is set, but ${ENGINES[wanted].bin} is not on this machine's PATH — see docs/RUNNING.md.`;
+  // Otherwise "install one" would be advice to install something already sitting on this PATH.
+  if (findExecutable(ENGINES.mlx.bin) && process.arch !== "arm64") {
+    return "mlx-whisper is installed but only runs on Apple Silicon — install openai-whisper, or set STUDYROOM_WHISPER=mlx to try it anyway. See docs/RUNNING.md.";
+  }
+  return "No transcription engine is installed — add mlx-whisper (Apple Silicon only) or openai-whisper (any OS). See docs/RUNNING.md.";
+}
+
 // Match the argv the app actually spawns, NOT the bare word: `pgrep -f mlx_whisper` also matches
 // any shell or editor whose command line merely contains that string (reproduced — it matched an
-// unrelated bash), and a false positive here is a 409 the user has no way to clear.
-const RUNNING_PATTERN = "mlx_whisper .*--output-format srt";
+// unrelated bash), and a false positive here is a 409 the user has no way to clear. The `.` spans
+// both dialects: mlx writes `--output-format`, openai-whisper `--output_format`.
+const RUNNING_PATTERN = "(mlx_)?whisper .*--output.format srt";
 
 /** Seconds of media, or null when ffprobe is missing or says nothing. Null is a supported state. */
 export function probeDuration(absPath) {
@@ -25,8 +117,19 @@ export function probeDuration(absPath) {
   });
 }
 
-/** Is some other transcription already running? Returns a pid, or null. */
+/**
+ * Is some other transcription already running? Returns a pid, or null.
+ *
+ * POSIX only. The portable guard is `index.js`'s module-level `transcribing` lock, which covers
+ * every platform; this is the EXTRA that catches a job outliving a server restart — reachable when
+ * one run takes ~73 minutes. WHAT WINDOWS LOSES, stated plainly: there, such a job is invisible, so
+ * the new server starts a second one and two multi-gigabyte models load at once. A PowerShell/CIM
+ * equivalent was considered and left out — nothing in this session can test it, and DECISIONS.md's
+ * stray-job entry already ruled that a guard which can 409 with no way to clear it is worse than
+ * the gap it closes.
+ */
 export function findStrayJob() {
+  if (IS_WINDOWS) return Promise.resolve(null);
   return new Promise((resolve) => {
     execFile("pgrep", ["-f", RUNNING_PATTERN], (err, stdout) => {
       const pid = String(stdout).trim().split("\n").filter(Boolean)[0];
@@ -117,7 +220,7 @@ export function coverageWarning(segments, duration) {
  * italic provenance note, an optional coverage warning, then paragraphs opening with a bold
  * [HH:MM:SS] marker. Looping duplicates are collapsed (see the ring below).
  */
-export function toMarkdown(segments, videoName, dateISO, warning = null) {
+export function toMarkdown(segments, videoName, dateISO, warning = null, model = "whisper") {
   const kept = [];
   const recent = []; // [{ key, start }] — a short window, newest last
   for (const seg of segments) {
@@ -146,7 +249,7 @@ export function toMarkdown(segments, videoName, dateISO, warning = null) {
   return [
     `# Transcript — ${videoName}`,
     "",
-    `_Auto-transcribed with Whisper (${MODEL}) on ${dateISO}. May contain recognition errors; repeated segments (silence hallucinations) were collapsed._`,
+    `_Auto-transcribed with Whisper (${model}) on ${dateISO}. May contain recognition errors; repeated segments (silence hallucinations) were collapsed._`,
     ...(warning ? ["", `**${warning}**`] : []),
     "",
     ...body,
@@ -164,10 +267,13 @@ const PROGRESS_LINE = /^\[((?:\d+:)?\d{1,2}:\d{2}[.,]\d+)\s*-->\s*((?:\d+:)?\d{1
  *   progress({ pct, at, text })  — pct is null when the duration is unknown (indeterminate bar)
  *   done({ path })               — the markdown was renamed into place
  *   error({ message })           — failed; no markdown was written
- * Returns { cancel() }, which kills the whole process group: mlx_whisper shells out to ffmpeg,
- * so killing only the parent leaves ffmpeg decoding a multi-hundred-megabyte file.
+ * Returns { cancel() }, which kills the whole tree: both engines shell out to ffmpeg, so killing
+ * only the parent leaves ffmpeg decoding a multi-hundred-megabyte file.
+ *
+ * `engine` comes from pickEngine() and is resolved ONCE, by the route — detecting it again here
+ * would be a second place for the two CLI dialects to drift apart.
  */
-export function transcribe({ subjectDir, relPath, language, translate }, on) {
+export function transcribe({ subjectDir, relPath, language, translate, engine }, on) {
   const videoAbs = path.join(subjectDir, relPath);
   const videoName = path.basename(relPath);
   const stem = videoName.replace(/\.[^.]+$/, "");
@@ -182,7 +288,40 @@ export function transcribe({ subjectDir, relPath, language, translate }, on) {
   let settled = false;
   let tmpDir = null;
   let stderrTail = "";
+  let stderrBuf = ""; // the incomplete trailing segment between two 'data' events
   let lastKey = null;
+  let lastDownloadPct = -1;
+
+  // openai-whisper fetches its model on first use (1,617,941,637 B for `turbo`) and tqdm draws that
+  // bar on STDERR, redrawn with \r and never a \n — so it reaches neither the stdout line parser
+  // below nor a \n-based splitter, and a first run on a fresh machine sits at 0% for minutes
+  // looking hung. It is matched FIRST and kept OUT of the error tail: 2048 characters of bar frames
+  // would evict the real error, and `.split("\n").pop()` over a \r-only stream hands back the whole
+  // blob as one "line". mlx never reaches this — HF_HUB_OFFLINE makes it fail rather than download.
+  const DOWNLOAD_LINE = /^\s*(\d+)%\|/;
+
+  /** One stderr segment: a download frame becomes progress, anything else is error evidence. */
+  const feedLine = (line) => {
+    if (!line.trim()) return;
+    const m = DOWNLOAD_LINE.exec(line);
+    if (!m) {
+      stderrTail = (stderrTail + line + "\n").slice(-2048); // drain, or the child blocks on a full pipe
+      return;
+    }
+    const pct = Number(m[1]);
+    if (pct === lastDownloadPct) return; // one event per whole percent, not per redraw
+    lastDownloadPct = pct;
+    on.progress({ pct: null, at: null, text: `Downloading the Whisper model (~1.5 GB, first run only) — ${pct}%` });
+  };
+
+  const feedStderr = (chunk) => {
+    const parts = (stderrBuf + chunk).split(/[\r\n]/);
+    stderrBuf = parts.pop() ?? ""; // tqdm's newest frame has no terminator yet; hold it back
+    for (const part of parts) feedLine(part);
+  };
+
+  /** Last real line of stderr, split on BOTH terminators so nothing can collapse into one blob. */
+  const lastStderrLine = () => stderrTail.split(/[\r\n]/).map((l) => l.trim()).filter(Boolean).pop() ?? "";
 
   const finish = async (result) => {
     if (settled) return;
@@ -198,6 +337,7 @@ export function transcribe({ subjectDir, relPath, language, translate }, on) {
 
   (async () => {
     try {
+      if (!engine) throw new Error(engineError()); // the route resolves it; this is the belt
       await fs.mkdir(outDir, { recursive: true });
       // A SIGKILLed server never runs the cleanup below, so clear any leftover before starting.
       await fs.unlink(partialPath).catch(() => {});
@@ -205,25 +345,10 @@ export function transcribe({ subjectDir, relPath, language, translate }, on) {
       tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "studyroom-srt-"));
 
       const duration = await probeDuration(videoAbs);
-      const args = [
-        videoAbs,
-        "--model", MODEL,
-        "--output-dir", tmpDir,
-        "--output-name", stem, // explicit, so the SRT path is known rather than derived
-        "--output-format", "srt",
-        "--verbose", "True",
-        // Whisper feeds each segment's text back as context by default, which is what seeds its
-        // repetition loops — and on Lecture 1 a loop derailed the decoder so badly that it stopped
-        // at 42:33 of 73:31 and still exited 0. Measured directly: with this flag the same file
-        // transcribes straight past that point. Costs a little cross-segment coherence; buys the
-        // other 42% of the lecture.
-        "--condition-on-previous-text", "False",
-      ];
-      if (language) args.push("--language", language);
-      if (translate) args.push("--task", "translate");
+      const args = engine.args({ input: videoAbs, outDir: tmpDir, stem, model: engine.model, language, translate });
 
-      console.debug(`[whisper] spawn (${relPath}, duration=${duration ?? "unknown"}) mlx_whisper ${args.slice(1).join(" ")}`);
-      child = spawn("mlx_whisper", args, {
+      console.debug(`[whisper] spawn (${relPath}, engine=${engine.name}, duration=${duration ?? "unknown"}) ${engine.bin} ${args.slice(1).join(" ")}`);
+      child = spawnCommand(engine.bin, args, {
         cwd: subjectDir,
         env: {
           ...process.env,
@@ -231,20 +356,13 @@ export function transcribe({ subjectDir, relPath, language, translate }, on) {
           // lines arrive in ~8KB bursts (or only at exit) and the progress bar sits still and
           // then lurches. Verified: with it, output is immediate.
           PYTHONUNBUFFERED: "1",
-          // huggingface_hub checks the model repo online BEFORE falling back to the cache. On a
-          // host with a dead IPv6 route that hangs in SYN_SENT until the TCP timeout — observed
-          // here as a transcription pinned at 0% CPU for 6+ minutes having burnt 0.65s total.
-          // The model is already cached and §6.5 says this runs fully offline, so force it.
-          HF_HUB_OFFLINE: "1",
+          ...engine.env,
         },
         stdio: ["ignore", "pipe", "pipe"],
-        detached: true,
       });
 
-      child.on("error", (err) => finish({ error: `Could not start mlx_whisper: ${err.message}` }));
-      child.stderr.on("data", (chunk) => {
-        stderrTail = (stderrTail + chunk).slice(-2048); // drain, or the child can block on a full pipe
-      });
+      child.on("error", (err) => finish({ error: `Could not start ${engine.bin}: ${err.message}` }));
+      child.stderr.on("data", (chunk) => feedStderr(String(chunk)));
 
       createInterface({ input: child.stdout }).on("line", (line) => {
         const m = PROGRESS_LINE.exec(line.trim());
@@ -260,16 +378,19 @@ export function transcribe({ subjectDir, relPath, language, translate }, on) {
       child.on("close", async (code, signal) => {
         if (settled) return;
         if (cancelled) return finish({ error: "Cancelled." });
+        feedLine(stderrBuf); // the last frame/line never got a terminator
+        stderrBuf = "";
         if (code !== 0) {
-          return finish({ error: `mlx_whisper exited (code ${code}${signal ? `, ${signal}` : ""})${stderrTail ? `: ${stderrTail.trim().split("\n").pop()}` : ""}` });
+          const tail = lastStderrLine();
+          return finish({ error: `${engine.bin} exited (code ${code}${signal ? `, ${signal}` : ""})${tail ? `: ${tail}` : ""}` });
         }
         try {
           const srt = await fs.readFile(path.join(tmpDir, `${stem}.srt`), "utf8");
           const segments = parseSrt(srt);
-          if (segments.length === 0) return finish({ error: "mlx_whisper produced no segments." });
+          if (segments.length === 0) return finish({ error: `${engine.bin} produced no segments.` });
           const warning = coverageWarning(segments, duration);
           if (warning) console.warn(`[whisper] ${relPath}: ${warning}`);
-          const markdown = toMarkdown(segments, videoName, new Date().toISOString().slice(0, 10), warning);
+          const markdown = toMarkdown(segments, videoName, new Date().toISOString().slice(0, 10), warning, engine.model);
           // Write beside the target, then rename: an interrupted run must leave NO file rather
           // than a truncated one, since the format has no terminator and _generated/ is committed.
           await fs.writeFile(partialPath, markdown);
@@ -287,11 +408,8 @@ export function transcribe({ subjectDir, relPath, language, translate }, on) {
   return {
     cancel() {
       cancelled = true;
-      if (child?.pid) {
-        try { process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ }
-      } else {
-        finish({ error: "Cancelled." });
-      }
+      if (child?.pid) killTree(child);
+      else finish({ error: "Cancelled." });
     },
   };
 }
