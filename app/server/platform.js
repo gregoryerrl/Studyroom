@@ -45,15 +45,22 @@ function isExecutableFile(p) {
  * Absolute path of `name` on PATH, or null. A name that already contains a separator is treated as
  * a path and only checked. On Windows every PATHEXT suffix is tried, and PATH entries may be
  * quoted (`"C:\Program Files\..."`), which `path.join` would otherwise carry into the candidate.
+ *
+ * The bare name is tried LAST on Windows, and only when it already carries a PATHEXT suffix.
+ * Trying it first found the extensionless bash script the Node installer ships for cygwin
+ * (`nodejs\npm`, no suffix) in preference to the `npm.cmd` beside it. Windows cannot execute
+ * that file, so the launcher's very first step on a fresh clone died with ENOENT (measured
+ * 2026-08-20). cmd.exe itself only ever runs what PATHEXT lists; this now matches it.
  */
 export function findExecutable(name) {
   if (name.includes("/") || (IS_WINDOWS && name.includes("\\"))) {
     return isExecutableFile(name) ? path.resolve(name) : null;
   }
   const dirs = (process.env.PATH ?? "").split(IS_WINDOWS ? ";" : ":").filter(Boolean);
-  const exts = IS_WINDOWS
-    ? ["", ...(process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)]
-    : [""];
+  const pathext = (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean);
+  // "claude.exe" must still resolve as itself; "npm" must never resolve to an extensionless file.
+  const named = pathext.some((e) => name.toLowerCase().endsWith(e.toLowerCase()));
+  const exts = IS_WINDOWS ? (named ? [...pathext, ""] : pathext) : [""];
   for (const dir of dirs) {
     const base = IS_WINDOWS ? dir.replace(/^"|"$/g, "") : dir;
     for (const ext of exts) {
