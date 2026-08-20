@@ -1,6 +1,6 @@
 # Transcript — Lecture_2_Intelligent_Agents.mp4
 
-_Auto-transcribed with Whisper (mlx-community/whisper-large-v3-turbo) on 2026-08-15. May contain recognition errors; consecutive duplicate segments (silence hallucinations) were collapsed._
+_Auto-transcribed with Whisper (mlx-community/whisper-large-v3-turbo) on 2026-08-15. May contain recognition errors; consecutive duplicate segments (silence hallucinations) were collapsed. **Repaired 2026-08-20:** a decoder repetition loop had destroyed [00:41:45]–[00:44:32] and [00:48:15]–[00:53:10] (~6.4 min of speech). That window was re-transcribed as an isolated 00:40:00–00:55:00 slice with the same model and spliced back in; boundaries were verified word-for-word against the surviving text on both sides._
 
 **[00:00:00]** In our previous lecture, we talked about the notion of intelligence. We also talked about the four different definitions of intelligence in AI. And for this course, we adopt the one that equates intelligence with rational behavior. We also assume that the agent has limited computational resources
 
@@ -150,39 +150,57 @@ _Auto-transcribed with Whisper (mlx-community/whisper-large-v3-turbo) on 2026-08
 
 **[00:39:38]** we'll have to look at long sequences of action. Not just what I need to do right now, but also what sequence of actions will I do so that I reach my goal. And this involves planning. Planning is concerned with finding the right action sequences that will lead to the goal.
 
-**[00:40:09]** Planning is fundamental in the area of robotics. Planning involves looking for the right action sequences. And structured as a search for these sequences. Given a set of atomic operations.
+**[00:40:10]** Planning is fundamental in the area of robotics. Planning involves looking for the right action sequences and structured as a search for these sequences. given a set of atomic operations. So we have discussed the different types of reflex agents
 
-**[00:40:40]** So we have discussed the different types of reflex agents. And the goal based agent as well. The reflex agent achieves the goal. It also achieves the goal. Even just like the goal based agent. But the reflex agent achieves the goal because the designer has pre-computed the correct action for the different cases. So that's how the reflex agent achieves its goal.
+**[00:40:44]** and goal-based agent as well. The reflex agent achieves the goal. It also achieves the goal. even just like the goal-based agent. But the reflex agent achieves the goal because the designer has pre-computed the correct action for the different cases. So that's how the reflex agent achieves its goal.
 
-**[00:41:14]** The designer has already put that goal into the agent program. Because of that, it's very efficient. Very efficient. But it suffers from lack of flexibility because the designer in many cases cannot possibly think of all the different scenarios that the agent will encounter in that complex environment.
+**[00:41:14]** The designer has already put that goal into the agent program. Because of that, it's very efficient, very efficient, but it suffers from lack of flexibility because the designer, in many cases, cannot possibly think of all the different scenarios that the agent will encounter in that complex environment.
 
-**[00:41:45]** Goal based agent considers what will happen if certain actions are performed. And selects the one that will make it achieve its goal. It's not going to be that efficient. But it is more flexible. It is not that efficient because it will have to do search. You'll have to do search.
+**[00:41:45]** Goal-based agent considers what will happen if certain actions are performed and selects the one that will make it achieve its goal. It's not going to be that efficient, but it is more flexible. It is not that efficient because it will have to do search. You'll have to do search.
 
-**[00:44:32]** Now we need to take that into account. So the objective of a utility based agent is to maximize the so-called happiness of the agent. So we need to measure this degree of happiness. And that is captured by the utility. This is a concept that we have in economics, a utility. It is a function that maps a state onto a real number.
+**[00:42:15]** We learned in our previous lecture that search and knowledge are like opposites. The more you search, well, you need more search when you have less knowledge. And if you have more knowledge, then you need less search. And similarly here. Since you do more, well, the knowledge is imperfect.
 
-**[00:45:04]** And as I've said, there are many goals. Some of these goals are conflicting. You want to reach Makati in the fastest way. And this means, this implies that the taxi, the autonomous vehicle, will have to travel at great speed. But at the same time, if you travel at great speed, then you compromise safety. So these two, these two goals may be conflicting.
+**[00:42:45]** you do search. So the goal-based agent will do planning, will do the planning. But here, the designers already incorporated everything. The goal already is taken account by the designer so that there's no more search. So let's now go to the model-based, utility-based agent.
 
-**[00:45:37]** And it is the utility function that provides the trade-off between these two goals. So for the model based utility agent, we choose the action sequence that will maximize the utility. Now we come to the last type of agent. The learning agent is any type of agent. The previous types that we have learned.
+**[00:43:17]** In the previous slide, we talked about the goal-based agent, which incorporates information, goal information, in deciding what to do. Now, we have to consider the fact that not all goals are the same. For example, you want to go to Makati from Quezon City, and you're going to ride an autonomous vehicle, a taxi, autonomous taxi.
 
-**[00:46:09]** The model based agent, the goal based agent, utility based agent, etc. But this time, this agent incorporates learning. Components of the learning agent are the following. It has a performance element, which is responsible for action selection. So this performance agent is also changed by the learning element.
+**[00:43:54]** the goals that we have is the goal that we have is simply to go to Makati but then not all goals are the same the the agent might might travel very fast and therefore make the trip unsafe okay so we are talking about safety versus speed or that the taxi fare might be high or low
 
-**[00:46:43]** So the learning element improves or changes the performance element. So that overall, the learning agent is able to achieve its goal. It gets better and better in achieving its goal. So the learning element is the second element here. It makes improvements to the knowledge components.
+**[00:44:29]** okay now we need to we need to take that into account so the objective of a utility-based agent is to maximize the so-called happiness of the agent. So we need to measure this degree of happiness, and that is captured by the utility. This is a concept that we have in economics, a utility. It is a function that maps a state onto a real number.
 
-**[00:47:13]** And you also have a critic that measures how the agent is doing and determines how performance element should be modified to do better in the future through the learning element. Then lastly, you have a problem generator, which suggests exploratory actions that lead to a new and more informative experiences.
+**[00:45:04]** and as I've said there are many goals some of these goals are conflicting you want to reach Makati in the fastest in the fastest way and this means this implies that the taxi, the autonomous vehicle will have to travel at great speed but at the same time if you travel at great speed then you compromise safety So these two goals may be conflicting.
 
-**[00:47:43]** So it will probably instruct the agent to perform some actions which are necessary for getting more information about the environment. So that overall, in the future, in the near future especially, the agent will perform better. Now let's talk about the types of environment.
+**[00:45:37]** And it is the utility function that provides the trade-off between these two goals. So for the model-based utility agent, we choose the action sequence that will maximize the utility. Now we come to the last type of agent. The learning agent is any type of agent, previous types that we have learned, the model-based agent, the goal-based agent, utility-based agent, etc.
 
-**[00:48:15]** As we have learned, the environment is the one that provides percepts to the agent. The agent in turn does actions on the environment and changes the state of the environment. You can say that that environment receives action from the agent. The environment is the one that provides a sense of the environment.
+**[00:46:14]** But this time, this agent incorporates learning. The components of the learning agent are the following. It has a performance element which is responsible for action selection. So this performance agent is also changed by the learning element. So the learning element improves or changes the performance element so that overall, the learning agent is able to achieve its goal.
 
-**[00:48:51]** The environment is the environment. The environment is the one that provides a sense of the environment. The environment is the environment that provides a sense of the environment. ! The environment is the environment that provides a sense of the environment.
+**[00:46:58]** It gets better and better in achieving its goal. So the learning element is the second element here. It makes improvements to the knowledge components. and you also have a critique that measures how the agent is doing and determines how performance element should be modified to do better in the future through the learning element.
 
-**[00:49:26]** ! The environment is the environment that provides a sense of the environment. ! The environment is the environment that provides a sense of the environment that provides a sense of the environment. The environment is the environment that provides a sense of the environment that provides a sense of the environment that provides a sense of the environment. The environment is the environment that provides a sense of the environment that provides a sense of the environment that provides a sense of the environment that provides a sense of the environment that provides a sense of the environment that provides a sense of the environment that provides a sense of the environment that provides a sense of the environment that provides a sense of the environment. !
+**[00:47:29]** Then lastly, you have a problem generator which suggests exploratory actions that lead to a new and more informative experiences. So it will probably instruct the agent to do, to perform some actions which are necessary for getting more information about the environment so that overall in the future, in the near future,
 
-**[00:53:10]** !! the sensors of your agent cannot fully observe the state, the complete state of the environment. So you might as well treat that environment as a non-deterministic or stochastic environment.
+**[00:48:03]** especially, the agent will perform better. Now, let's talk about other types of environment. As we have learned, the environment is the one that provides percepts to the agent. The agent, in turn, does actions on the environment and changes the state of the environment. we can say that that environment receives action from the agent.
 
-**[00:53:40]** ! But in reality, it is a deterministic environment. It's just that it's you, your sensors, are not capable of sensing all the relevant parts of the state of the environment. So it's better to think of an environment as deterministic or stochastic from the point of view of the agent. As an example, chess is deterministic.
+**[00:48:37]** Types of environments or properties of environment. An environment can be fully or partially observable. It is fully observable if the agent's sensors give or provide access to the complete state of the environment at each point in time. So the state of the environment is figured out by your agent through its sensors.
 
-**[00:54:10]** Chess is deterministic because you know all the rules of chess and it's what you see is what your adversary sees. So it's deterministic. The next moves are, well, the next possible moves at least are all determined. Okay? You know, but it's just that there are too many, you know, so that's another issue.
+**[00:49:12]** And the sensors are able to give this complete state at each point in time. In other words, the sensors detect all aspects of the environment that are relevant to the choice of action. And relevance depends on the performance measure. If the agent has complete access to the state of the environment
+
+**[00:49:42]** at each point in time, the agent need not maintain an internal state to keep track of the world. On the other hand, a partially observable environment has a state or a part of that state that is not measured or measurable by the sensors of the agent. or that the sensors are noisy and inaccurate so that you might as well consider the environment
+
+**[00:50:21]** as partially observable. The environment can have a single agent. We have seen what a single agent is or multi-agent or multi-agents. In a multi-agent environment, the agents will treat each other either as agents or just as objects.
+
+**[00:50:53]** So agent will just treat another agent as like another object there that doesn't care about that object. or you could think of that agent, the other agents in the environment as fellow agents. And in that case, the agent can cooperate with the other agents or that the environment itself is structured as an adversarial environment.
+
+**[00:51:27]** For example, game, game playing, chess. So there are two agents. And the other agent is adversarial. When you say adversarial, you mean that type of agent that tries to reduce your well-being, that tries to destroy you, that tries its best so that you don't achieve your goal. and so that it achieves its goal, which is winning the game.
+
+**[00:52:02]** That is your adversarial environment. The environment can also be deterministic or stochastic. An environment is deterministic if its next state is completely determined by the current state and the actions selected by the environment. So obviously deterministic environments are easier because you can actually model the next state of the environment,
+
+**[00:52:36]** not only in the next state, but the next states, many states. And with that, it's easier for you to act because there's less search. maybe no search at all because it's completely deterministic. On the other hand, if the environment is non-deterministic or stochastic, then you'll have to do a lot of search.
+
+**[00:53:10]** Also, an environment may be deterministic, But then it's partially observable. So you can have an environment that is deterministic, but the sensors of your agent cannot fully observe the state, the complete state of the environment. So you might as well treat that environment as a non-deterministic or stochastic environment.
+
+**[00:53:40]** But in reality, it is a deterministic environment. It's just that it's you, your sensors, are not capable of sensing all the relevant parts of the state of the environment. So it's better to think of an environment as deterministic or stochastic from the point of view of the agent. as an example chess is deterministic
+
+**[00:54:10]** chess is deterministic because you know all the rules of chess and it's what you see is what your adversary sees so it's deterministic the next moves are well the next possible moves at least are all determined okay you know, but it's just that there are too many, you know, so
 
 **[00:54:41]** Now, in the case of poker, it's also deterministic, right? The rules of poker are deterministic. But it's better to treat that game, that adversarial game, as non-deterministic. Why? Because you don't observe the hand of the other people in poker.
 
