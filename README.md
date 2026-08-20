@@ -20,6 +20,8 @@ That installs the app's one dependency if needed, starts the server on `http://l
 
 **[`docs/RUNNING.md`](docs/RUNNING.md)** is the setup guide: per-OS install commands, the two transcription engines, the Windows notes, and a plain statement of what has actually been tested where.
 
+**[`docs/TABLET.md`](docs/TABLET.md)** walks through using Studyroom on a tablet, step by step — Tailscale on both devices, finding the address, starting the server on it, and sharing the machine with someone else.
+
 Add a subject on the dashboard, then drag your own files onto its page. Nothing in `subjects/` is required for the app to run — it lists whatever is there.
 
 ## Course materials, copyright and reuse

@@ -94,11 +94,28 @@ network you control. Use a private network instead:
 
 ```sh
 # Tailscale (recommended): install it on both machines, then bind THAT interface, not 0.0.0.0
-tailscale ip -4                         # e.g. 100.101.102.103
 STUDYROOM_HOST=100.101.102.103 ./start
 ```
 
+**Finding the address: use the menu-bar/tray app or <https://login.tailscale.com/admin/machines>.**
+Do *not* assume a `tailscale` CLI is on `PATH` — the **Mac App Store** build is sandboxed and
+deliberately does not install one, so `tailscale ip -4` answers `command not found` on a perfectly
+working install. That build ships the binary inside the bundle if you want it:
+
+```sh
+/Applications/Tailscale.app/Contents/MacOS/Tailscale ip -4
+```
+
+The standalone and Homebrew builds do put `tailscale` on `PATH`. Check which you have before
+writing either form into a script — `ls /Applications/Tailscale.app/Contents/_MASReceipt` exists
+only on the App Store build.
+
 Then open `http://100.101.102.103:4321` on the tablet, which must be signed into the same tailnet.
+**[`TABLET.md`](TABLET.md) is the step-by-step version of all this**, including sharing the machine
+with another person.
+
+If the address is wrong or Tailscale is not connected, the server now says so and exits 1 rather
+than printing a success line for an address it never bound.
 Only your own devices can route to that address at all, so there is no authorization decision to
 get wrong. Pen notes, lecture video, chat and transcription all work, because it is the real
 server — the `.mp4` files are local-only and never reach GitHub, so this is the *only* way to watch
