@@ -9,6 +9,10 @@ const TYPE_BY_EXT = {
   ".mp4": "video", ".mov": "video", ".mkv": "video", ".webm": "video",
   ".md": "markdown", ".markdown": "markdown",
   ".html": "html", ".htm": "html",
+  // RASTER ONLY. .svg is deliberately absent: it is a scriptable top-level document, and leaving it
+  // in the `other` bucket is what keeps the CSP sandbox on it in the /files/ route — see the long
+  // comment there. Adding it here would silently strip that header.
+  ".png": "image", ".jpg": "image", ".jpeg": "image", ".webp": "image", ".gif": "image",
   ".txt": "text", ".srt": "text", ".vtt": "text", ".csv": "text", ".json": "text",
   ".py": "text", ".js": "text", ".ts": "text", ".tex": "text",
 };

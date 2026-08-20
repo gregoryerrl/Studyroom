@@ -317,7 +317,10 @@ app.get("/files/:s/*path", async (req, res) => {
   //    fails closed for the next unknown extension. pdf/video are excluded to keep their native
   //    viewers; markdown/text are inert as text/plain above. NEVER add allow-same-origin beside
   //    allow-scripts: that combination defeats the sandbox entirely.
-  if (kind === "html" || kind === "other") res.set("Content-Security-Policy", "sandbox");
+  //    `image` is raster-only (svg stays in `other`) so nothing here is scriptable, but the header
+  //    costs nothing — sandbox does not affect <img> loading, and a sandboxed PNG still renders when
+  //    opened in a new tab — so it is applied anyway rather than carving out an exception.
+  if (kind === "html" || kind === "other" || kind === "image") res.set("Content-Security-Policy", "sandbox");
 
   // The error callback answers JSON, but express only defaults that Content-Type when none is
   // set — so on the (unreachable in practice) TOCTOU-ENOENT path it inherits text/plain from

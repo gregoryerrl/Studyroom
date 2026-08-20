@@ -23,7 +23,16 @@
         <div class="files-bar">
           <h2>Materials</h2>
           <button type="button" id="file-add" class="btn small" title="Upload files into this subject (or drop them anywhere on this pane)">↑ Upload</button>
-          <button type="button" id="file-new" class="btn small" title="Create a new markdown note and start writing">+ Note</button>
+          <!-- + Note offers two kinds of note: a markdown file you type in, and a page you write on
+               by hand. The menu is built here rather than in JS so it exists before subject.js runs. -->
+          <span class="menu-wrap">
+            <button type="button" id="file-new" class="btn small" aria-haspopup="menu" aria-expanded="false"
+                    title="Create a new note — typed or handwritten">+ Note <span class="caret">▾</span></button>
+            <div id="file-new-menu" class="menu" role="menu" hidden>
+              <button type="button" id="file-new-md" role="menuitem">Notes<small>Markdown file you type in</small></button>
+              <button type="button" id="file-new-pen" role="menuitem">Pen<small>Write or sketch by hand</small></button>
+            </div>
+          </span>
         </div>
         <input type="file" id="file-input" multiple hidden>
         <form id="new-file" class="new-file" hidden>
@@ -77,7 +86,14 @@
           <div class="companion-bar">
             <select id="companion-pick" class="companion-pick" title="Which document to show down here" aria-label="Companion document"></select>
             <span id="companion-dirty" class="companion-dirty" hidden>unsaved</span>
-            <button type="button" id="companion-new" class="btn small" title="Create a new note and start writing it here">+ Note</button>
+            <span class="menu-wrap">
+              <button type="button" id="companion-new" class="btn small" aria-haspopup="menu" aria-expanded="false"
+                      title="Create a new note down here — typed or handwritten">+ Note <span class="caret">▾</span></button>
+              <div id="companion-new-menu" class="menu" role="menu" hidden>
+                <button type="button" id="companion-new-md" role="menuitem">Notes<small>Markdown file you type in</small></button>
+                <button type="button" id="companion-new-pen" role="menuitem">Pen<small>Write or sketch by hand</small></button>
+              </div>
+            </span>
             <button type="button" id="companion-edit" class="btn small" hidden title="Write in this document without leaving the one above">Edit</button>
             <button type="button" id="companion-save" class="btn small primary" hidden title="Save your changes">Save</button>
             <button type="button" id="companion-cancel" class="btn small" hidden>Cancel</button>
@@ -150,6 +166,7 @@
   </main>
 
   <script src="/vendor/marked.min.js"></script>
+  <script src="/draw.js"></script>
   <script src="/subject.js"></script>
 </body>
 </html>
