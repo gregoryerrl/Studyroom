@@ -614,6 +614,34 @@ app.post("/api/subjects/:s/transcribe", async (req, res) => {
   res.on("close", () => { if (!done) job.cancel(); });
 });
 
-app.listen(PORT, HOST, () => {
+// The listen callback fires EVEN WHEN THE BIND FAILED — measured 2026-08-20 on Node 22.14: with an
+// unavailable address the callback still ran, `server.address()` was null, `server.listening` was
+// false, and EADDRNOTAVAIL arrived afterwards. So the callback alone cannot be trusted to mean
+// "serving", and printing from it unconditionally announced a URL nothing was listening on.
+// `server.listening` is the honest signal; it is false for both EADDRNOTAVAIL and EADDRINUSE.
+const server = app.listen(PORT, HOST, () => {
+  if (!server.listening) return; // the error handler below reports what actually happened
   console.log(`Studyroom → http://${HOST}:${PORT}  (root: ${ROOT}, subjects: ${SUBJECTS})`);
+});
+
+// Without this there is no 'error' listener on the server at all, so a failed bind was silent and
+// the process still exited 0 — the launcher then reported success too. Exiting non-zero is what
+// lets app/start.js tell "did not come up" from "you stopped it".
+server.on("error", (err) => {
+  if (err.code === "EADDRNOTAVAIL") {
+    console.error(`Cannot bind ${HOST}: this machine has no such address right now.`);
+    console.error(`If that is a Tailscale address, Tailscale is probably not connected — open it`);
+    console.error(`and check it says Connected, then try again. STUDYROOM_HOST sets the address.`);
+  } else if (err.code === "EADDRINUSE") {
+    console.error(`Port ${PORT} is already in use — Studyroom may already be running.`);
+    console.error(`Find it with: lsof -nP -iTCP:${PORT} -sTCP:LISTEN`);
+  } else {
+    console.error(`Could not start the server on ${HOST}:${PORT} — ${err.message}`);
+  }
+  // `process.exitCode`, NOT `process.exit()`. Node's stdio is asynchronous on Windows for both
+  // TTYs and pipes, and process.exit() abandons pending writes — so the explanation above could be
+  // truncated on the very platform whose launcher instructions send people here, while start.js
+  // says "its own message is above" and points at nothing. The bind failed, so no handle keeps the
+  // event loop alive: it still exits 1, with the message flushed.
+  process.exitCode = 1;
 });
