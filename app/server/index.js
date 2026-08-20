@@ -15,7 +15,21 @@ const HERE = import.meta.dirname;
 const ROOT = path.resolve(process.env.STUDYROOM_DIR || path.join(HERE, "..", ".."));
 const STATE_DIR = path.join(ROOT, ".studyroom");
 const PUBLIC = path.join(HERE, "..", "public");
-const HOST = "127.0.0.1";
+// Loopback by default, so nothing about the local workflow changes and the server stays
+// unreachable from the network unless you deliberately say otherwise. The override takes an
+// ADDRESS, not a flag, because the right answer is almost always a specific interface — your
+// Tailscale IP — rather than 0.0.0.0. There is no authentication anywhere in this app: the chat
+// route spawns Claude Code with Write and Edit under --permission-mode dontAsk, and PUT writes
+// arbitrary files under a subject. Binding 0.0.0.0 hands both to every host on the network.
+//
+// `||` HERE IS DELIBERATE AND SECURITY-RELEVANT — do not "modernize" it to `??`. An empty string
+// is not nullish, so under `??` a set-but-empty STUDYROOM_HOST (a shell wrapper, a blank .env
+// line, `docker -e STUDYROOM_HOST=`) reaches app.listen() as "" — and listen(port, "") binds `::`,
+// the IPv6 wildcard, i.e. EVERY interface. Measured 2026-08-20: `*:4394` at the socket. That is a
+// silent fail-open on the one variable whose whole documentation says don't bind everything.
+// `||` coerces "" back to loopback; verified the same day, empty value still bound 127.0.0.1 only
+// and was unreachable from the machine's LAN address.
+const HOST = process.env.STUDYROOM_HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT) || 4321; // env override is a dev affordance (scratch trees beside the real server)
 
 // Subjects live in their own directory so the data root stays tidy: <root>/ keeps profile.md and

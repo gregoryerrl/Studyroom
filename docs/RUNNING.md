@@ -70,7 +70,44 @@ Useful switches:
 | `--no-open` | start the server but don't launch a browser (headless boxes, remote sessions) |
 | `PORT=4399` | serve on another port |
 | `STUDYROOM_DIR=/path` | use another data root (must contain, or be allowed to create, `subjects/`) |
+| `STUDYROOM_HOST=<addr>` | bind another address instead of `127.0.0.1` — see §2a before you use it |
 | `cd app && npm start` | run just the server, no launcher, no browser |
+
+### 2a. Reaching it from a tablet or another machine
+
+By default the server binds `127.0.0.1`, so only the machine running it can reach it. A tablet on
+the same Wi-Fi gets nothing — that is the intended default, not a bug.
+
+**Read this before overriding it. The app has no authentication of any kind.** There is no login,
+no token, no CORS restriction. Anything that can open the port can also:
+
+- `POST /api/subjects/:s/chats/:id/messages`, which **spawns Claude Code with `Write` and `Edit`
+  under `--permission-mode dontAsk`** on a prompt it supplies — code execution as you, billed to
+  your account;
+- `PUT`/`PATCH`/`DELETE` any file under any subject.
+
+Hiding the edit buttons in the UI does **not** address this. The buttons are not the door; the
+routes are, and `curl` does not read your CSS.
+
+So do not bind `0.0.0.0` on a network you do not control — and a home or campus Wi-Fi is not a
+network you control. Use a private network instead:
+
+```sh
+# Tailscale (recommended): install it on both machines, then bind THAT interface, not 0.0.0.0
+tailscale ip -4                         # e.g. 100.101.102.103
+STUDYROOM_HOST=100.101.102.103 ./start
+```
+
+Then open `http://100.101.102.103:4321` on the tablet, which must be signed into the same tailnet.
+Only your own devices can route to that address at all, so there is no authorization decision to
+get wrong. Pen notes, lecture video, chat and transcription all work, because it is the real
+server — the `.mp4` files are local-only and never reach GitHub, so this is the *only* way to watch
+a lecture on the tablet.
+
+The machine running `./start` has to stay awake. If that is unacceptable, the app has to be hosted
+somewhere, which means solving video storage, Linux transcription and real route-level auth — a
+project, not a switch. `0.0.0.0` remains possible for a machine you fully trust, such as an
+offline network, but it is never the recommended default.
 
 ## 3. Transcription engines
 
