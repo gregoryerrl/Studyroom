@@ -923,12 +923,23 @@ const LAYOUT_KEY = "studyroom.layout";
 const LAYOUT_DEFAULTS = { files: 260, chat: 400, companion: 320 }; // = M1's original fixed tracks
 const LAYOUT_VAR = { files: "--files-w", chat: "--chat-w", companion: "--companion-h" };
 
+// TWO objects, and the distinction is the whole fix. `layout` is INTENT — the size you dragged to,
+// never touched by the window getting smaller. `shown` is what actually reaches the CSS variables,
+// intent clamped to whatever fits right now. Only `layout` is persisted.
+//
+// Collapsing the two is what made a narrow window permanent: applyLayout() wrote the clamped value
+// back into the stored one, so at innerWidth 756 the bounds close to [150,150] and [280,280] and
+// 260/400 became 150/280 — then widening reopened the bounds but clampLayout(150) is still 150.
+// It clamped and never restored. Worse, double-click-to-reset called applyLayout(true) while
+// narrow, so the one control labelled "reset" wrote the collapsed numbers to localStorage and made
+// them survive the reload that used to be the only cure.
 let layout = { ...LAYOUT_DEFAULTS };
 try {
   // A hand-edited or half-written entry must not brick the page — take only finite numbers.
   const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}");
   for (const k of Object.keys(LAYOUT_DEFAULTS)) if (Number.isFinite(saved[k])) layout[k] = saved[k];
 } catch { /* unreadable storage (private mode, quota, garbage): defaults are fine */ }
+const shown = { ...layout };
 
 const PREVIEW_MIN = 320; // the document surface keeps this much whatever the other two are dragged to
 const GUTTERS = 12;      // the two 6px handles in the workspace row
@@ -942,8 +953,10 @@ const GUTTERS = 12;      // the two 6px handles in the workspace row
  */
 function layoutLimits(which) {
   const w = window.innerWidth;
-  if (which === "files") return [150, Math.max(150, Math.min(520, w - layout.chat - GUTTERS - PREVIEW_MIN))];
-  if (which === "chat") return [280, Math.max(280, Math.min(900, w - layout.files - GUTTERS - PREVIEW_MIN))];
+  // `shown`, not `layout`: the constraint is what the other pane currently OCCUPIES, not what it
+  // would like to be. Measuring against intent would reserve room for a width that is not on screen.
+  if (which === "files") return [150, Math.max(150, Math.min(520, w - shown.chat - GUTTERS - PREVIEW_MIN))];
+  if (which === "chat") return [280, Math.max(280, Math.min(900, w - shown.files - GUTTERS - PREVIEW_MIN))];
   // The companion shares the preview column, so it is bounded by that column's real height — a strip
   // of the document above it always survives.
   const previewH = $(".preview").getBoundingClientRect().height || window.innerHeight;
@@ -957,8 +970,10 @@ const clampLayout = (which, px) => {
 
 function applyLayout(persist = false) {
   for (const which of Object.keys(LAYOUT_DEFAULTS)) {
-    layout[which] = clampLayout(which, layout[which]);
-    document.documentElement.style.setProperty(LAYOUT_VAR[which], `${layout[which]}px`);
+    // Clamp for DISPLAY only. `layout[which]` is deliberately not written back, so widening the
+    // window later reopens the bounds and the size you chose comes back on its own.
+    shown[which] = clampLayout(which, layout[which]);
+    document.documentElement.style.setProperty(LAYOUT_VAR[which], `${shown[which]}px`);
   }
   if (persist) {
     try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch { /* quota / private mode */ }
@@ -975,7 +990,7 @@ for (const gutter of document.querySelectorAll(".gutter")) {
     if (e.button !== 0) return;
     e.preventDefault();
     const start = vertical ? e.clientY : e.clientX;
-    const from = layout[which];
+    const from = shown[which]; // drag from where the handle IS, not from an intent that does not fit
     // Capture keeps the drag alive over an <iframe>/<embed>/<video>, which would otherwise swallow
     // pointermove. It throws if the pointer was already released; that must not abort the handler
     // and strand the .dragging class and the body cursor.
@@ -986,8 +1001,18 @@ for (const gutter of document.querySelectorAll(".gutter")) {
     const move = (ev) => {
       // companion: dragging the handle UP makes the companion taller, so that delta inverts too.
       const delta = vertical ? start - ev.clientY : (ev.clientX - start) * sign;
-      layout[which] = clampLayout(which, from + delta);
-      document.documentElement.style.setProperty(LAYOUT_VAR[which], `${layout[which]}px`);
+      // A drag DOES set intent: you asked for this size at this window width, so it is yours to keep.
+      // That is the one case where clamping and intent legitimately coincide.
+      //
+      // Known residual, and it is deliberate. Because `from` is the VISIBLE size, dragging while a
+      // pane is squeezed rewrites intent down to what is on screen — files at 520 from an external
+      // monitor, clamped to 418 on the laptop, becomes 419 if you nudge the handle 1px, and the 520
+      // is gone. A handle must follow the cursor, so there is no version of this that both tracks
+      // the pointer and preserves a size you cannot see. The guarantee is therefore: a RESIZE never
+      // costs you a pane size, a deliberate DRAG may. That is the narrow remainder of a bug that
+      // used to fire on every resize.
+      shown[which] = layout[which] = clampLayout(which, from + delta);
+      document.documentElement.style.setProperty(LAYOUT_VAR[which], `${shown[which]}px`);
     };
     const up = () => {
       gutter.removeEventListener("pointermove", move);
@@ -1011,7 +1036,9 @@ for (const gutter of document.querySelectorAll(".gutter")) {
     const keys = vertical ? { ArrowUp: 1, ArrowDown: -1 } : { ArrowLeft: -sign, ArrowRight: sign };
     if (!(e.key in keys)) return;
     e.preventDefault();
-    layout[which] = clampLayout(which, layout[which] + keys[e.key] * 16);
+    // Nudge from the visible size, not from intent: at a width where intent does not fit, stepping
+    // off the stored number would look like a dead key until the accumulated difference was eaten.
+    layout[which] = clampLayout(which, shown[which] + keys[e.key] * 16);
     applyLayout(true);
   });
 }
