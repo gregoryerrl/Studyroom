@@ -1,0 +1,1722 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 201 — Lecture 3: Search, Visualized</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+      }}}
+    }
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>
+    const mermaidThemes = {
+      light: {
+        primaryColor: '#dbeafe', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6',
+        lineColor: '#64748b', secondaryColor: '#f0fdf4', tertiaryColor: '#fef3c7',
+        fontFamily: 'Inter, system-ui, sans-serif', fontSize: '14px',
+        clusterBkg: '#f8fafc', clusterBorder: '#cbd5e1',
+      },
+      dark: {
+        primaryColor: '#1e3a5f', primaryTextColor: '#e2e8f0', primaryBorderColor: '#60a5fa',
+        lineColor: '#64748b', secondaryColor: '#14352a', tertiaryColor: '#3d2008',
+        fontFamily: 'Inter, system-ui, sans-serif', fontSize: '14px',
+        clusterBkg: '#1e293b', clusterBorder: '#334155', edgeLabelBackground: '#1e293b',
+      }
+    };
+    const nodeColorSwaps = [
+      { light: ['#f0fdf4','#10b981','#065f46'], dark: ['#064e3b','#34d399','#d1fae5'] },
+      { light: ['#fee2e2','#ef4444','#991b1b'], dark: ['#450a0a','#f87171','#fecaca'] },
+      { light: ['#fef3c7','#f59e0b','#92400e'], dark: ['#451a03','#fbbf24','#fde68a'] },
+      { light: ['#dbeafe','#3b82f6','#1e3a5f'], dark: ['#172554','#60a5fa','#bfdbfe'] },
+    ];
+    mermaid.initialize({ startOnLoad: false });
+  </script>
+
+  <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+
+  <style>
+    .scroll-mt-24 { scroll-margin-top: 6rem; }
+    .mermaid { display: flex; justify-content: center; overflow-x: auto; }
+    .mermaid svg { max-width: 100%; height: auto; cursor: zoom-in; }
+    .mermaid svg { overflow: visible !important; }
+    .mermaid svg foreignObject { overflow: visible !important; }
+    .diagram-overlay-inner svg { overflow: visible !important; }
+    .diagram-overlay-inner svg foreignObject { overflow: visible !important; }
+    pre[class*="language-"], pre:has(> code[class*="language-"]) { margin: 0 !important; border-radius: 0 !important; padding: 1.25em !important; }
+
+    .diagram-overlay {
+      position: fixed; inset: 0; z-index: 100;
+      background: rgba(0,0,0,0.85);
+      display: flex; align-items: center; justify-content: center;
+      cursor: zoom-out;
+      opacity: 0; transition: opacity 0.2s ease;
+      pointer-events: none;
+    }
+    .diagram-overlay.open { opacity: 1; pointer-events: auto; }
+    .diagram-overlay-inner {
+      max-width: 95vw; max-height: 90vh;
+      overflow: auto; padding: 24px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .diagram-overlay-inner svg { max-width: none !important; cursor: grab; }
+    .diagram-overlay-inner.dragging { cursor: grabbing; }
+    .diagram-overlay-hint {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      color: #94a3b8; font-size: 13px; font-family: Inter, system-ui, sans-serif;
+      pointer-events: none;
+    }
+    code[class*="language-"] { font-family: 'JetBrains Mono', monospace !important; font-size: 0.875rem !important; }
+    .toc-link { transition: all 0.2s ease; }
+    .toc-link.active { color: #2563eb; font-weight: 600; border-left-color: #2563eb; background-color: #eff6ff; }
+    .section-animate { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease-out, transform 0.6s ease-out; }
+    .section-animate.visible { opacity: 1; transform: translateY(0); }
+    .theme-toggle { transition: all 0.3s ease; }
+    .theme-toggle:hover { transform: rotate(15deg); }
+
+    .viz-container { position: relative; overflow: hidden; }
+    .viz-container svg { display: block; }
+    .ts { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: #64748b; background: #f1f5f9; border-radius: 0.375rem; padding: 0.1rem 0.4rem; white-space: nowrap; }
+    .dark .ts { background: #1e293b; color: #94a3b8; }
+    .stepbtn { cursor: pointer; user-select: none; }
+    .stepbtn:hover { filter: brightness(1.1); }
+    .stepbtn:active { transform: translateY(1px); }
+    .deckimg { border-radius: 0.75rem; border: 1px solid #e2e8f0; cursor: zoom-in; }
+    .dark .deckimg { border-color: #334155; }
+
+    @keyframes glow-pulse {
+      0%, 100% { filter: drop-shadow(0 0 4px rgba(96,165,250,0.4)); }
+      50% { filter: drop-shadow(0 0 12px rgba(96,165,250,0.8)); }
+    }
+    .viz-glow { animation: glow-pulse 2s ease-in-out infinite; }
+
+    @keyframes spectrum-slide {
+      0%, 18% { transform: translateX(0); }
+      33%, 51% { transform: translateX(var(--stop2)); }
+      66%, 84% { transform: translateX(var(--stop3)); }
+      100% { transform: translateX(0); }
+    }
+
+    html.dark { color-scheme: dark; }
+    .dark body { background-color: #0f172a; color: #cbd5e1; }
+    .dark header { background-color: rgba(15, 23, 42, 0.88) !important; border-color: #1e293b !important; }
+    .dark header h1 { color: #f1f5f9 !important; }
+    .dark .bg-white { background-color: #1e293b !important; }
+    .dark .bg-slate-50 { background-color: #0f172a !important; }
+    .dark .border-slate-200 { border-color: #334155 !important; }
+    .dark .bg-slate-200 { background-color: #334155 !important; }
+    .dark .bg-slate-100 { background-color: #16223a !important; }
+    .dark .bg-slate-800 { background-color: #0f172a !important; }
+    .dark h1, .dark h2, .dark h3, .dark h4 { color: #f1f5f9 !important; }
+    .dark strong { color: #e2e8f0 !important; }
+    .dark code:not([class*="language-"]) { background-color: #334155 !important; color: #e2e8f0 !important; }
+    .dark .text-slate-900 { color: #f1f5f9 !important; }
+    .dark .text-slate-800 { color: #e2e8f0 !important; }
+    .dark .text-slate-700 { color: #cbd5e1 !important; }
+    .dark .text-slate-600 { color: #94a3b8 !important; }
+    .dark .text-slate-500 { color: #64748b !important; }
+    .dark .toc-link { color: #64748b !important; border-color: #1e293b !important; }
+    .dark .toc-link:hover { color: #60a5fa !important; border-color: #3b82f6 !important; }
+    .dark .toc-link.active { color: #60a5fa !important; border-left-color: #60a5fa !important; background-color: #1e293b !important; }
+    .dark #toc-mobile { background-color: #1e293b !important; border-color: #334155 !important; }
+
+    .dark .bg-red-50 { background-color: #2a1215 !important; }
+    .dark .border-red-200 { border-color: #5c1d1d !important; }
+    .dark .text-red-900, .dark .text-red-800 { color: #fca5a5 !important; }
+    .dark .text-red-700 { color: #fca5a5 !important; }
+    .dark .text-red-600 { color: #f87171 !important; }
+    .dark .bg-amber-50 { background-color: #271506 !important; }
+    .dark .border-amber-200 { border-color: #6b3a0a !important; }
+    .dark .text-amber-900, .dark .text-amber-800 { color: #fcd34d !important; }
+    .dark .text-amber-700 { color: #fcd34d !important; }
+    .dark .bg-emerald-50 { background-color: #0a2118 !important; }
+    .dark .border-emerald-200 { border-color: #155e3e !important; }
+    .dark .text-emerald-900, .dark .text-emerald-800 { color: #6ee7b7 !important; }
+    .dark .text-emerald-700 { color: #6ee7b7 !important; }
+    .dark .bg-violet-50 { background-color: #1a0f2e !important; }
+    .dark .border-violet-200 { border-color: #4c1d95 !important; }
+    .dark .text-violet-900, .dark .text-violet-800 { color: #c4b5fd !important; }
+    .dark .text-violet-700 { color: #c4b5fd !important; }
+    .dark .bg-blue-50 { background-color: #0c1a33 !important; }
+    .dark .bg-blue-100 { background-color: #112244 !important; }
+    .dark .border-blue-200 { border-color: #1e4a8a !important; }
+    .dark .border-blue-300 { border-color: #1e4a8a !important; }
+    .dark .text-blue-900, .dark .text-blue-800 { color: #93c5fd !important; }
+    .dark .text-blue-700 { color: #93c5fd !important; }
+    .dark .text-blue-600 { color: #60a5fa !important; }
+    .dark .bg-sky-50 { background-color: #0c1a33 !important; }
+    .dark .border-sky-200 { border-color: #1e4a8a !important; }
+    .dark .text-sky-900, .dark .text-sky-800 { color: #93c5fd !important; }
+
+    @media print {
+      nav, header, #toc-mobile { display: none !important; }
+      main { margin-left: 0 !important; }
+      .section-animate { opacity: 1 !important; transform: none !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased">
+
+  <header class="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div>
+        <h1 class="text-lg font-bold text-slate-900 leading-tight">AI 201 — Lecture 3: Search, Visualized</h1>
+        <p class="text-xs text-slate-500">Blind Search · Heuristic Search · Adversarial Search — Pros Naval, University of the Philippines</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="toggleTheme()" class="theme-toggle p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title="Toggle theme">
+          <svg id="icon-sun" class="w-5 h-5 text-amber-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+          </svg>
+          <svg id="icon-moon" class="w-5 h-5 text-slate-600 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+          </svg>
+        </button>
+        <button onclick="document.getElementById('toc-mobile').classList.toggle('hidden')"
+                class="lg:hidden p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div id="toc-mobile" class="hidden fixed top-16 left-0 right-0 z-40 bg-white border-b border-slate-200 shadow-lg lg:hidden p-4 max-h-[70vh] overflow-y-auto">
+    <nav class="space-y-1">
+      <a href="#sec-arc" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">The One Story of Lecture 3</a>
+      <a href="#sec-agent" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">A · Agents &amp; Problem Types</a>
+      <a href="#sec-machinery" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">A · The Search-Tree Machinery</a>
+      <a href="#sec-queues" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">A · One Algorithm, Six Queues</a>
+      <a href="#sec-cost" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">A · The Price of Blindness</a>
+      <a href="#sec-romania" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">B · Greedy vs A★ on Romania</a>
+      <a href="#sec-guarantees" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">B · A★'s Guarantees</a>
+      <a href="#sec-h1h2" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">B · Measuring Heuristics</a>
+      <a href="#sec-idastar" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">B · IDA★</a>
+      <a href="#sec-minimax" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">C · Minimax</a>
+      <a href="#sec-alphabeta" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">C · Alpha-Beta Pruning</a>
+      <a href="#sec-evalfn" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">C · Evaluation Functions</a>
+      <a href="#sec-mcts" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">C · Monte Carlo Tree Search</a>
+      <a href="#sec-stochastic" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">C · Stochastic Games</a>
+      <a href="#sec-checklist" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">Exam Checklist</a>
+    </nav>
+  </div>
+
+  <div class="max-w-7xl mx-auto pt-24 px-6 flex gap-10">
+    <aside class="hidden lg:block w-56 flex-shrink-0">
+      <nav class="sticky top-24 space-y-0.5 text-sm max-h-[calc(100vh-8rem)] overflow-y-auto" id="toc">
+        <a href="#sec-arc" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">The One Story of Lecture 3</a>
+        <p class="pl-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Part A — Blind Search</p>
+        <a href="#sec-agent" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Agents &amp; Problem Types</a>
+        <a href="#sec-machinery" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">The Search-Tree Machinery</a>
+        <a href="#sec-queues" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">One Algorithm, Six Queues</a>
+        <a href="#sec-cost" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">The Price of Blindness</a>
+        <p class="pl-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Part B — Heuristic Search</p>
+        <a href="#sec-romania" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Greedy vs A★ on Romania</a>
+        <a href="#sec-guarantees" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">A★'s Guarantees</a>
+        <a href="#sec-h1h2" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Measuring Heuristics</a>
+        <a href="#sec-idastar" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">IDA★</a>
+        <p class="pl-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Part C — Adversarial Search</p>
+        <a href="#sec-minimax" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Minimax</a>
+        <a href="#sec-alphabeta" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Alpha-Beta Pruning</a>
+        <a href="#sec-evalfn" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Evaluation Functions</a>
+        <a href="#sec-mcts" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Monte Carlo Tree Search</a>
+        <a href="#sec-stochastic" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Stochastic Games</a>
+        <p class="pl-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Wrap-up</p>
+        <a href="#sec-checklist" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Exam Checklist</a>
+      </nav>
+    </aside>
+
+    <main class="flex-1 min-w-0 pb-24">
+      <div class="mb-16 section-animate">
+        <h1 class="text-4xl font-extrabold text-slate-900 mb-4 leading-tight">Search: from blind wandering to beating an opponent</h1>
+        <p class="text-lg text-slate-600 leading-relaxed max-w-2xl">
+          Three lectures, one escalating story. <strong>3A</strong>: find a goal knowing nothing about where it is.
+          <strong>3B</strong>: find it faster with an estimate of the remaining distance.
+          <strong>3C</strong>: find it while an adversary works against you.
+          Built from the verified transcripts, all 100 deck slides, and 65 frames of what the instructor actually pointed at —
+          every timestamp below cites <code>Lecture-3-diy-handout.md</code>'s transcripts.
+        </p>
+      </div>
+      <!-- ═══════════ SECTION: THE ARC ═══════════ -->
+      <section id="sec-arc" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-blue-700 text-sm font-bold">1</span>
+          The One Story of Lecture 3: knowledge trades against search
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">The instructor returns to one law all three hours: <strong>the less you know, the more you must search</strong> — and each part of Lecture 3 buys back search effort with a new kind of knowledge. Watch the marker slide as the story escalates:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <p class="mb-4 text-sm font-medium text-slate-500">The knowledge ⇄ search trade-off, animated</p>
+            <div id="viz-spectrum"></div>
+          </div>
+
+          <div class="grid md:grid-cols-3 gap-4">
+            <div class="p-5 rounded-xl bg-white border-2 border-red-200 shadow-sm">
+              <p class="text-xs font-bold uppercase tracking-wider text-red-600 mb-1">Part A · Blind Search <span class="ts">1:24:04 · 41 slides</span></p>
+              <p class="font-semibold text-slate-900 mb-2">You know nothing about distance to the goal</p>
+              <p class="text-sm text-slate-600 leading-relaxed">Choice of node depends <em>only on its position in the tree</em>. Six strategies, all the same algorithm with a different queue. Cost: exponential time — the 35-years table.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border-2 border-amber-200 shadow-sm">
+              <p class="text-xs font-bold uppercase tracking-wider text-amber-600 mb-1">Part B · Heuristic Search <span class="ts">44:23 · 25 slides</span></p>
+              <p class="font-semibold text-slate-900 mb-2">You know an <em>estimate</em> h(n) of remaining cost</p>
+              <p class="text-sm text-slate-600 leading-relaxed">Greedy trusts h alone and gets burned; A★ adds what you already paid — f = g + h — and earns four guarantees. Google Maps runs on this <span class="ts">00:10:43·A</span>.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border-2 border-emerald-200 shadow-sm">
+              <p class="text-xs font-bold uppercase tracking-wider text-emerald-600 mb-1">Part C · Adversarial Search <span class="ts">59:20 · 34 slides</span></p>
+              <p class="font-semibold text-slate-900 mb-2">An opponent fights back, under a clock</p>
+              <p class="text-sm text-slate-600 leading-relaxed">Full search is impossible, so knowledge moves into evaluation functions, pruning windows, playout statistics, and probability weights.</p>
+            </div>
+          </div>
+
+          <div class="flex gap-4 p-5 rounded-xl bg-violet-50 border border-violet-200">
+            <div class="flex-shrink-0 text-violet-700 mt-0.5">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+            </div>
+            <div>
+              <p class="font-semibold text-violet-900 mb-1">The sentence that ties 3A to Lecture 1</p>
+              <p class="text-violet-800 text-sm leading-relaxed">"If you have complete knowledge, you don't do any search at all. If you have very little knowledge, you'll compensate that by doing more search." <span class="ts">00:19:05·A</span> — the single-state vacuum agent needs only a lookup table; the blind traveler needs BFS.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ SECTION: AGENT & PROBLEM TYPES ═══════════ -->
+      <section id="sec-agent" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-red-100 text-red-700 text-sm font-bold">A</span>
+          Problem-solving agents &amp; the four problem types
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">A <strong>problem-solving agent</strong> is "a goal-based agent that decides what to do by finding <em>sequences</em> of actions that lead to desirable states" <span class="ts">00:00:39·A</span>. Its whole life is a three-beat loop:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm">
+            <p class="mb-4 text-sm font-medium text-slate-500">Formulate → Search → Execute</p>
+            <div class="mermaid">flowchart LR
+    F["1 · FORMULATE<br/>state the problem<br/>and the goal"]:::fmt --> S["2 · SEARCH<br/>find the action sequence<br/>that achieves the goal"]:::srch --> E["3 · EXECUTE<br/>perform the best<br/>sequence found"]:::exec
+    E -.->|"world changed? new goal?"| F
+    classDef fmt fill:#fef3c7,stroke:#f59e0b,color:#92400e
+    classDef srch fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+    classDef exec fill:#f0fdf4,stroke:#10b981,color:#065f46</div>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed">How much the agent knows decides which of <strong>four problem types</strong> it faces <span class="ts">00:13:24·A</span> — demonstrated on the two-cell <strong>vacuum world</strong>: 8 states, 3 actions (<code>move-left</code>, <code>move-right</code>, <code>suck-dirt</code>), goal = states 7 or 8 (everything clean) <span class="ts">00:15:38·A</span>.</p>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                <p class="font-semibold text-slate-900">1 · Single-state</p>
+              </div>
+              <p class="text-sm text-slate-600 leading-relaxed mb-2">Knows its exact state <em>and</em> every action's effect <span class="ts">00:16:48·A</span>. From state 5: <code>{move-right, suck-dirt}</code> → done.</p>
+              <p class="text-xs font-medium text-emerald-700">Complete knowledge ⇒ no search — "let's just have a lookup table" <span class="ts">00:19:43·A</span></p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                <p class="font-semibold text-slate-900">2 · Multiple-state</p>
+              </div>
+              <p class="text-sm text-slate-600 leading-relaxed mb-2">Sensors too weak — it only knows it's in <em>one of several</em> states. No sensing needed to win: <code>{move-right, suck-dirt, move-left, suck-dirt}</code> reaches the goal <strong>from any initial belief</strong> <span class="ts">00:21:21·A</span>.</p>
+              <p class="text-xs font-medium text-blue-700">Reason over <em>sets</em> of states (belief states)</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                <p class="font-semibold text-slate-900">3 · Contingency</p>
+              </div>
+              <p class="text-sm text-slate-600 leading-relaxed mb-2">The right sequence depends on what happens mid-execution — car driving: traffic, accidents, pedestrians <span class="ts">00:24:09·A</span>.</p>
+              <p class="text-xs font-medium text-amber-700">"Sense, search, execute. Sense, search, execute." — a loop <span class="ts">00:24:45·A</span> · Games live here → Part C</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-violet-500"></span>
+                <p class="font-semibold text-slate-900">4 · Exploratory</p>
+              </div>
+              <p class="text-sm text-slate-600 leading-relaxed mb-2">Doesn't even know what its actions <em>do</em> — must experiment "just like newborn babies" <span class="ts">00:26:23·A</span>.</p>
+              <p class="text-xs font-medium text-violet-700">Reinforcement learning's home turf; multi-armed bandits isolate explore-vs-exploit <span class="ts">00:26:53·A</span></p>
+            </div>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed">Search problems themselves have exactly four parts <span class="ts">00:27:30·A</span>: a <strong>state space</strong>, <strong>operators</strong>, a <strong>goal test</strong>, and a <strong>path cost</strong>. Formulation is not bookkeeping — it decides how big your search space <em>is</em>:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm">
+            <p class="mb-4 text-sm font-medium text-slate-500">8-queens: the same problem, two formulations, twelve orders of magnitude <span class="ts">00:33:54·A</span></p>
+            <div class="grid md:grid-cols-2 gap-4 items-stretch">
+              <div class="p-4 rounded-lg bg-red-50 border border-red-200 flex flex-col justify-between">
+                <div>
+                  <p class="font-semibold text-red-900 mb-1">Complete-state</p>
+                  <p class="text-sm text-red-800 leading-relaxed mb-3">All 8 queens on the board, then shuffle attacked queens within their columns until nothing attacks.</p>
+                </div>
+                <p class="font-mono text-2xl font-bold text-red-700">≈ 2.8 × 10<sup>15</sup> <span class="text-xs font-sans font-medium">sequences</span></p>
+              </div>
+              <div class="p-4 rounded-lg bg-emerald-50 border border-emerald-200 flex flex-col justify-between">
+                <div>
+                  <p class="font-semibold text-emerald-900 mb-1">Incremental</p>
+                  <p class="text-sm text-emerald-800 leading-relaxed mb-3">Place queens one at a time, each in the leftmost empty column, never attacked.</p>
+                </div>
+                <p class="font-mono text-2xl font-bold text-emerald-700">2,057 <span class="text-xs font-sans font-medium">sequences</span></p>
+              </div>
+            </div>
+            <p class="mt-4 text-sm text-slate-600">"The incremental formulation is obviously much better" — path cost is zero for both (only the final state matters), but the <strong>search cost</strong> is wildly different <span class="ts">00:33:16·A</span>.</p>
+          </div>
+        </div>
+      </section>
+      <!-- ═══════════ SECTION: MACHINERY ═══════════ -->
+      <section id="sec-machinery" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-red-100 text-red-700 text-sm font-bold">A</span>
+          The search-tree machinery: one algorithm to rule them all
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">Everything in Parts A and B is <em>one</em> algorithm. Expanding a state means "generate a new set of states by applying all valid operators to that state" <span class="ts">00:38:58·A</span>; doing that repeatedly builds a <strong>search tree</strong> whose root is the initial state. The tree can be <em>infinite</em> even over 20 cities — paths can loop <span class="ts">00:46:43·A</span>.</p>
+
+          <div class="rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+            <div class="flex items-center gap-2 px-4 py-2.5 bg-slate-800 text-slate-300 text-sm font-mono">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+              <span>GENERAL-SEARCH — deck slide 25, refined form</span>
+              <span class="ml-auto text-slate-500 text-xs">[00:52:47·A]</span>
+            </div>
+            <pre class="!m-0 !rounded-none"><code class="language-clike">function GENERAL-SEARCH(problem, QUEUING-FN) returns a solution, or failure
+    nodes := MAKE-QUEUE(MAKE-NODE(INITIAL-STATE[problem]))
+    loop do
+        if nodes is empty then return failure
+        node := REMOVE-FRONT(nodes)
+        if GOAL-TEST[problem] applied to STATE(node) succeeds then return node
+        nodes := QUEUING-FN(nodes, EXPAND(node, OPERATORS[problem]))
+    end</code></pre>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <h4 class="text-sm font-semibold text-slate-700 mb-3">A node stores five things <span class="ts">00:49:03·A</span></h4>
+              <ul class="space-y-1.5 text-sm text-slate-600">
+                <li class="flex gap-2"><span class="font-mono text-blue-700 font-semibold">state</span> — the world state it represents</li>
+                <li class="flex gap-2"><span class="font-mono text-blue-700 font-semibold">parent</span> — the node that generated it</li>
+                <li class="flex gap-2"><span class="font-mono text-blue-700 font-semibold">operator</span> — the action that produced it</li>
+                <li class="flex gap-2"><span class="font-mono text-blue-700 font-semibold">depth</span> — nodes on the path from the root</li>
+                <li class="flex gap-2"><span class="font-mono text-blue-700 font-semibold">path&nbsp;cost</span> — g so far — Part B's g(n) is born here</li>
+              </ul>
+            </div>
+            <div class="p-5 rounded-xl bg-blue-50 border border-blue-200">
+              <h4 class="text-sm font-semibold text-blue-900 mb-2">The one sentence that unlocks Part B</h4>
+              <p class="text-sm text-blue-800 leading-relaxed mb-2">"The <strong>only place where knowledge can be incorporated</strong> is in the queuing function." <span class="ts">00:01:44·B</span> (bolded on the slide itself)</p>
+              <p class="text-sm text-blue-800 leading-relaxed">Every strategy in Lecture 3 — BFS, DFS, UCS, greedy, A★ — is GENERAL-SEARCH with a different <code>QUEUING-FN</code>. That is the entire design space.</p>
+            </div>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed">The <strong>fringe</strong> (frontier) — "the collection of nodes waiting to be expanded" — is "best implemented as a queue" <span class="ts">00:50:34·A</span> with four operations: <code>MAKE-QUEUE</code>, <code>EMPTY?</code>, <code>REMOVE-FRONT</code>, and the star of the show, <code>QUEUING-FN</code> <span class="ts">00:51:45·A</span>.</p>
+        </div>
+      </section>
+
+      <!-- ═══════════ SECTION: QUEUES / BFS vs DFS ═══════════ -->
+      <section id="sec-queues" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-red-100 text-red-700 text-sm font-bold">A</span>
+          One algorithm, six queues: watch BFS and DFS diverge
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">BFS puts new nodes at the <strong class="text-emerald-700">END</strong> of the queue <span class="ts">01:00:43·A</span>; DFS puts them at the <strong class="text-red-700">FRONT</strong> <span class="ts">01:10:34·A</span>. That single line of code is the entire difference. Step through both on the same binary tree — same expansions, opposite personalities:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <p class="text-sm font-medium text-slate-500">Interactive: the queue IS the strategy</p>
+              <div class="flex items-center gap-2">
+                <button id="qv-prev" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">← Back</button>
+                <button id="qv-step" class="stepbtn px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold shadow-sm">Step ▸</button>
+                <button id="qv-reset" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">Reset</button>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-2 gap-6">
+              <div>
+                <p class="text-center text-sm font-bold text-emerald-700 mb-1">BFS — new nodes join the BACK</p>
+                <div id="qv-bfs-tree"></div>
+                <div class="mt-2 flex items-center gap-1.5 flex-wrap justify-center min-h-[2rem]" id="qv-bfs-queue"></div>
+              </div>
+              <div>
+                <p class="text-center text-sm font-bold text-red-700 mb-1">DFS — new nodes cut to the FRONT</p>
+                <div id="qv-dfs-tree"></div>
+                <div class="mt-2 flex items-center gap-1.5 flex-wrap justify-center min-h-[2rem]" id="qv-dfs-queue"></div>
+              </div>
+            </div>
+            <p id="qv-caption" class="mt-4 text-sm text-slate-600 text-center font-medium"></p>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="flex gap-4 p-5 rounded-xl bg-emerald-50 border border-emerald-200">
+              <div class="flex-shrink-0 text-emerald-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg></div>
+              <div>
+                <p class="font-semibold text-emerald-900 mb-1">BFS: complete + shallowest-first</p>
+                <p class="text-emerald-800 text-sm leading-relaxed">Goal-tests every node level by level, so a shallow solution is found before any deeper one — optimal when path cost never decreases with depth <span class="ts">01:02:20·A</span>. The price: O(b<sup>d</sup>) time <em>and</em> memory.</p>
+              </div>
+            </div>
+            <div class="flex gap-4 p-5 rounded-xl bg-red-50 border border-red-200">
+              <div class="flex-shrink-0 text-red-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></div>
+              <div>
+                <p class="font-semibold text-red-900 mb-1">DFS: neither complete nor optimal</p>
+                <p class="text-red-800 text-sm leading-relaxed">Dives forever down infinite branches <span class="ts">01:12:18·A</span>, and goal-tests a depth-3 solution before the depth-1 one right next door <span class="ts">01:12:51·A</span>. In exchange: O(bm) memory — it prunes exhausted subtrees as it backs out <span class="ts">01:10:01·A</span>.</p>
+              </div>
+            </div>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed"><strong>Uniform Cost Search</strong> (Dijkstra 1959) is the third personality: expand the <em>cheapest</em> node by g(n) — "BFS is just a special case with g(n) = DEPTH(n)" <span class="ts">01:08:19·A</span>. Its guarantee needs one condition: costs never decrease along a path, i.e. every operator cost ≥ 0 <span class="ts">01:08:49·A</span>. <strong>Depth-Limited</strong> caps DFS at depth ℓ (complete iff ℓ ≥ solution depth; note O(b<sup>ℓ</sup>) time but O(bℓ) space <span class="ts">01:15:38·A</span>) — and <strong>Iterative Deepening</strong> turns that cap into a schedule: limits 0, 1, 2, … until a goal appears <span class="ts">01:16:15·A</span>.</p>
+        </div>
+      </section>
+      <!-- ═══════════ SECTION: COST OF BLINDNESS ═══════════ -->
+      <section id="sec-cost" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-red-100 text-red-700 text-sm font-bold">A</span>
+          The price of blindness: 35 years, and the verdict table
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">BFS expands at most 1 + b + b² + … + b<sup>d</sup> nodes <span class="ts">01:04:30·A</span>. The deck makes that concrete with b = 10, 1 ms and 100 bytes per node — read the bars (log scale) and find where your patience runs out:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <p class="mb-4 text-sm font-medium text-slate-500">BFS time &amp; memory, b = 10 — deck slide 30 <span class="ts">01:05:53·A</span></p>
+            <table class="w-full text-sm">
+              <thead><tr class="text-left text-slate-500 border-b border-slate-200">
+                <th class="py-2 pr-4 font-semibold">Depth</th><th class="py-2 pr-4 font-semibold">Nodes</th><th class="py-2 pr-4 font-semibold">Time</th><th class="py-2 pr-4 font-semibold w-1/3">Time, log scale</th><th class="py-2 font-semibold">Memory</th>
+              </tr></thead>
+              <tbody class="text-slate-700">
+                <tr class="border-b border-slate-100"><td class="py-1.5 pr-4 font-mono">0</td><td class="pr-4 font-mono">1</td><td class="pr-4">1 millisecond</td><td class="pr-4"><div class="h-2 rounded bg-emerald-400" style="width:2%"></div></td><td>100 bytes</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-1.5 pr-4 font-mono">2</td><td class="pr-4 font-mono">111</td><td class="pr-4">0.1 seconds</td><td class="pr-4"><div class="h-2 rounded bg-emerald-400" style="width:14%"></div></td><td>11 kilobytes</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-1.5 pr-4 font-mono">4</td><td class="pr-4 font-mono">11,111</td><td class="pr-4">11 seconds</td><td class="pr-4"><div class="h-2 rounded bg-emerald-400" style="width:27%"></div></td><td>1 megabyte</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-1.5 pr-4 font-mono">6</td><td class="pr-4 font-mono">10<sup>6</sup></td><td class="pr-4">18 minutes</td><td class="pr-4"><div class="h-2 rounded bg-amber-400" style="width:40%"></div></td><td>111 megabytes</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-1.5 pr-4 font-mono">8</td><td class="pr-4 font-mono">10<sup>8</sup></td><td class="pr-4">31 hours</td><td class="pr-4"><div class="h-2 rounded bg-amber-400" style="width:53%"></div></td><td>11 gigabytes</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-1.5 pr-4 font-mono">10</td><td class="pr-4 font-mono">10<sup>10</sup></td><td class="pr-4">128 days</td><td class="pr-4"><div class="h-2 rounded bg-orange-400" style="width:66%"></div></td><td>1 terabyte</td></tr>
+                <tr class="border-b border-slate-100 bg-red-50"><td class="py-1.5 pr-4 font-mono font-bold text-red-700">12</td><td class="pr-4 font-mono font-bold text-red-700">10<sup>12</sup></td><td class="pr-4 font-bold text-red-700">35 years</td><td class="pr-4"><div class="h-2 rounded bg-red-500 viz-glow" style="width:79%"></div></td><td class="font-medium text-red-700">111 terabytes</td></tr>
+                <tr><td class="py-1.5 pr-4 font-mono">14</td><td class="pr-4 font-mono">10<sup>14</sup></td><td class="pr-4">3500 years</td><td class="pr-4"><div class="h-2 rounded bg-red-500" style="width:92%"></div></td><td>11,111 terabytes</td></tr>
+              </tbody>
+            </table>
+            <p class="mt-4 text-sm text-slate-600">"Can you wait for 35 years? I cannot. But I can spend more money if I'm desperate" — buy drives for the 111 TB; you cannot buy the 35 years, and even 100 computers only shrink it to a decade <span class="ts">01:06:25·A</span>–<span class="ts">01:07:35·A</span>.</p>
+          </div>
+
+          <div class="flex gap-4 p-5 rounded-xl bg-amber-50 border border-amber-200">
+            <div class="flex-shrink-0 text-amber-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg></div>
+            <div>
+              <p class="font-semibold text-amber-900 mb-1">Exam hook</p>
+              <p class="text-amber-800 text-sm leading-relaxed">"For BFS, <strong>execution time is a bigger problem than the memory requirement</strong>" <span class="ts">01:07:35·A</span>.</p>
+            </div>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed"><strong>Iterative deepening</strong> looks wasteful — every round re-expands the previous rounds — but the bottom level of an exponential sum dwarfs everything above it: even at branching factor 2, "IDS only takes twice as long as a complete BFS" <span class="ts">01:18:04·A</span>. It banks BFS's completeness and optimality at DFS's O(bd) memory, which earns the lecture's verdict:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <p class="mb-4 text-sm font-medium text-slate-500">Comparison of blind search strategies — deck slide 41 <span class="ts">01:22:25·A</span></p>
+            <table class="w-full text-sm text-center">
+              <thead><tr class="text-slate-500 border-b border-slate-200">
+                <th class="py-2 px-2 text-left font-semibold">Criterion</th><th class="py-2 px-2 font-semibold">BFS</th><th class="py-2 px-2 font-semibold">Uniform-Cost</th><th class="py-2 px-2 font-semibold">DFS</th><th class="py-2 px-2 font-semibold">Depth-Limited</th><th class="py-2 px-2 font-semibold bg-blue-50 rounded-t-lg">Iter. Deepening</th><th class="py-2 px-2 font-semibold">Bidirectional*</th>
+              </tr></thead>
+              <tbody class="text-slate-700">
+                <tr class="border-b border-slate-100">
+                  <td class="py-2 px-2 text-left font-medium">Complete?</td>
+                  <td class="text-emerald-600 font-bold">Yes¹</td><td class="text-emerald-600 font-bold">Yes¹²</td><td class="text-red-600 font-bold">No</td><td class="text-red-600 font-bold">No</td><td class="text-emerald-600 font-bold bg-blue-50">Yes¹</td><td class="text-emerald-600 font-bold">Yes¹⁴</td>
+                </tr>
+                <tr class="border-b border-slate-100">
+                  <td class="py-2 px-2 text-left font-medium">Optimal cost?</td>
+                  <td class="text-emerald-600 font-bold">Yes³</td><td class="text-emerald-600 font-bold">Yes</td><td class="text-red-600 font-bold">No</td><td class="text-red-600 font-bold">No</td><td class="text-emerald-600 font-bold bg-blue-50">Yes³</td><td class="text-emerald-600 font-bold">Yes³⁴</td>
+                </tr>
+                <tr class="border-b border-slate-100 font-mono text-xs">
+                  <td class="py-2 px-2 text-left font-sans text-sm font-medium">Time</td>
+                  <td>O(b<sup>d</sup>)</td><td>O(b<sup>1+⌊C*/ε⌋</sup>)</td><td>O(b<sup>m</sup>)</td><td>O(b<sup>ℓ</sup>)</td><td class="bg-blue-50">O(b<sup>d</sup>)</td><td>O(b<sup>d/2</sup>)</td>
+                </tr>
+                <tr class="font-mono text-xs">
+                  <td class="py-2 px-2 text-left font-sans text-sm font-medium">Space</td>
+                  <td class="text-red-600">O(b<sup>d</sup>)</td><td class="text-red-600">O(b<sup>1+⌊C*/ε⌋</sup>)</td><td class="text-emerald-600">O(bm)</td><td class="text-emerald-600">O(bℓ)</td><td class="text-emerald-600 font-bold bg-blue-50 rounded-b-lg">O(bd)</td><td>O(b<sup>d/2</sup>)</td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="mt-3 text-xs text-slate-500">b = branching factor · m = max tree depth · d = shallowest solution depth · ℓ = depth limit. ¹ b finite (+ solution exists or space finite) · ² action costs ≥ ε &gt; 0 · ³ identical action costs · ⁴ both halves BFS/UCS. *Bidirectional (Pohl 1969) meets in the middle — two b<sup>d/2</sup> trees — but needs predecessors, one goal, and a concrete goal description: "chess is definitely not one" <span class="ts">01:20:48·A</span>.</p>
+          </div>
+
+          <div class="flex gap-4 p-5 rounded-xl bg-emerald-50 border border-emerald-200">
+            <div class="flex-shrink-0 text-emerald-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+            <div>
+              <p class="font-semibold text-emerald-900 mb-1">The lecture's pick</p>
+              <p class="text-emerald-800 text-sm leading-relaxed">"I like this IDS. It's probably a good choice because it's complete, it's optimal, and time and space complexity are reasonable" <span class="ts">01:23:03·A</span> — the preferred blind method for large spaces with unknown solution depth <span class="ts">01:19:11·A</span>.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <!-- ═══════════ SECTION: ROMANIA — GREEDY vs A* ═══════════ -->
+      <section id="sec-romania" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 text-amber-700 text-sm font-bold">B</span>
+          Greedy vs A★ on Romania — the lecture's centerpiece
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">Part B hands the blind traveler a ruler: <strong>h(n)</strong>, "the estimated cost of the cheapest path from n to the goal" <span class="ts">00:04:39·B</span> — here, the straight-line distance (SLD) to Bucharest. <strong class="text-amber-700">Greedy best-first</strong> trusts h alone. <strong class="text-blue-700">A★</strong> adds what the trip has already cost: <strong>f(n) = g(n) + h(n)</strong> <span class="ts">00:16:41·B</span>. Same map, same table — step both and watch them split:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div class="flex items-center gap-1.5 p-1 rounded-lg bg-slate-100 border border-slate-200" role="tablist">
+                <button id="ro-mode-greedy" class="stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">Greedy (h only)</button>
+                <button id="ro-mode-astar" class="stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">A★ (g + h)</button>
+              </div>
+              <div class="flex items-center gap-2">
+                <button id="ro-prev" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">← Back</button>
+                <button id="ro-step" class="stepbtn px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold shadow-sm">Step ▸</button>
+                <button id="ro-reset" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">Reset</button>
+              </div>
+            </div>
+            <div id="ro-map"></div>
+            <p id="ro-caption" class="mt-3 text-sm text-slate-600 text-center font-medium min-h-[2.5rem]"></p>
+            <div id="ro-frontier" class="mt-1 flex items-center gap-1.5 flex-wrap justify-center min-h-[2rem]"></div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-5 rounded-xl bg-amber-50 border border-amber-200">
+              <p class="font-semibold text-amber-900 mb-1">Greedy's result: Arad–Sibiu–Fagaras–Bucharest = 450 km</p>
+              <p class="text-amber-800 text-sm leading-relaxed">It "minimizes the estimated cost… thereby cutting the search cost, but it is neither optimal nor complete" — the detour through Rimnicu–Pitesti is 32 km shorter, and on Iasi→Fagaras greedy walks into Neamt, a dead end, because Neamt merely <em>looks</em> closer <span class="ts">00:13:12·B</span>. Worst case O(b<sup>m</sup>) <span class="ts">00:14:55·B</span>.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-blue-50 border border-blue-200">
+              <p class="font-semibold text-blue-900 mb-1">A★'s result: Arad–Sibiu–Rimnicu–Pitesti–Bucharest = 418 km</p>
+              <p class="text-blue-800 text-sm leading-relaxed">"253 is your H. I got that from here" <span class="ts">00:20:14·B</span> — every frontier node carries g + h, and the smallest sum is expanded. With h admissible, the first goal accepted is the optimal one.</p>
+            </div>
+          </div>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm">
+            <p class="mb-4 text-sm font-medium text-slate-500">From the actual deck — the A★ expansion tree, laser dot on Sibiu's f = 140 + 253 = 393 <span class="ts">00:20:14·B</span></p>
+            <img src="frames/3B/point-002017.png" alt="Deck slide 12: A* solution to route finding, with the instructor's cursor on the f=140+253=393 computation under Sibiu" class="deckimg w-full" loading="lazy" onclick="openImageZoom(this)">
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ SECTION: A* GUARANTEES ═══════════ -->
+      <section id="sec-guarantees" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 text-amber-700 text-sm font-bold">B</span>
+          A★'s four guarantees — and what each one costs
+        </h2>
+        <div class="space-y-6">
+          <div class="flex gap-4 p-5 rounded-xl bg-violet-50 border border-violet-200">
+            <div class="flex-shrink-0 text-violet-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg></div>
+            <div>
+              <p class="font-semibold text-violet-900 mb-1">The definition everything rests on</p>
+              <p class="text-violet-800 text-sm leading-relaxed">A heuristic is <strong>admissible</strong> when it never overestimates: h(n) ≤ the true remaining distance <span class="ts">00:17:13·B</span>. SLD qualifies — a straight line is the shortest possible path. "If h is admissible, then A★ is complete and optimal" <span class="ts">00:18:20·B</span>; it is even <strong>optimally efficient</strong> — no other optimal algorithm is guaranteed to expand fewer nodes (Dechter &amp; Pearl 1983).</p>
+            </div>
+          </div>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm">
+            <p class="mb-4 text-sm font-medium text-slate-500">The optimality proof, by contradiction <span class="ts">00:22:30·B</span> — walk the chain</p>
+            <div class="relative pl-8 space-y-6 before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-blue-200">
+              <div class="relative">
+                <div class="absolute -left-8 top-1 w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">1</div>
+                <p class="text-sm text-slate-700"><strong>Assume the bad outcome:</strong> A★ returns a suboptimal goal G₂, i.e. g(G₂) &gt; f* (the optimal cost). Let n be an unexpanded node on the true optimal path.</p>
+              </div>
+              <div class="relative">
+                <div class="absolute -left-8 top-1 w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">2</div>
+                <p class="text-sm text-slate-700"><strong>Chain the inequalities:</strong> h admissible ⇒ <span class="font-mono">f* ≥ f(n)</span>; and if the search chose G₂ over n, <span class="font-mono">f(n) ≥ f(G₂)</span>. At a goal, h = 0, so <span class="font-mono">f(G₂) = g(G₂)</span>.</p>
+              </div>
+              <div class="relative">
+                <div class="absolute -left-8 top-1 w-6 h-6 rounded-full bg-red-600 text-white text-xs font-bold flex items-center justify-center">✕</div>
+                <p class="text-sm text-slate-700"><strong>Contradiction:</strong> <span class="font-mono">f* ≥ g(G₂)</span> — "which contradicts our previous assumption" <span class="ts">00:24:58·B</span>. So A★ can never return a suboptimal goal first.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-3 gap-4">
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Monotonicity + pathmax</p>
+              <p class="text-sm text-slate-600 leading-relaxed">f should never decrease along a path. When a quirky h makes it dip, repair it: <span class="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">f(n′) = max(f(n), g(n′)+h(n′))</span> <span class="ts">00:26:36·B</span> — the pathmax equation, "use the parent's F cost instead."</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Completeness</p>
+              <p class="text-sm text-slate-600 leading-relaxed">A★ is complete on <strong>locally finite graphs</strong> — finitely many branches per node, every operator cost ≥ some δ &gt; 0 <span class="ts">00:27:47·B</span>.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Complexity — the catch</p>
+              <p class="text-sm text-slate-600 leading-relaxed">Still exponential unless the heuristic error grows no faster than log of the true cost: <span class="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">|h(n) − h*(n)| ≤ O(log h*(n))</span> <span class="ts">00:28:17·B</span>. The practical drawback: <strong>memory</strong> — A★ keeps every generated node.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <!-- ═══════════ SECTION: H1 vs H2 ═══════════ -->
+      <section id="sec-h1h2" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 text-amber-700 text-sm font-bold">B</span>
+          Measuring heuristics: h₁ vs h₂ on the 8-puzzle
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">Two admissible heuristics for the N-puzzle <span class="ts">00:29:27·B</span>: <strong class="text-red-700">h₁</strong> counts tiles in the wrong position (a misplaced tile must move at least once); <strong class="text-blue-700">h₂</strong> sums each tile's Manhattan distance to its home (a tile must make at least that many moves). Toggle between them on the deck's board — "so this tile here, 4, is in the wrong position" <span class="ts">00:29:58·B</span>, "five has to move this way" <span class="ts">00:31:07·B</span>:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div class="flex items-center gap-1.5 p-1 rounded-lg bg-slate-100 border border-slate-200">
+                <button id="hp-mode-h1" class="stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">h₁ — misplaced tiles</button>
+                <button id="hp-mode-h2" class="stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">h₂ — Manhattan distance</button>
+              </div>
+              <p class="text-sm font-medium text-slate-500">Click a tile to spotlight its journey</p>
+            </div>
+            <div id="hp-boards" class="flex flex-wrap items-center justify-center gap-8"></div>
+            <p id="hp-caption" class="mt-4 text-sm text-slate-600 text-center font-medium min-h-[2.5rem]"></p>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed">Which heuristic is better? The deck defines the ruler: the <strong>effective branching factor</strong> b* — the uniform branching a tree of depth d would need to hold the N nodes you actually expanded, <span class="font-mono text-sm bg-slate-100 px-1.5 py-0.5 rounded">N = 1 + b* + (b*)² + … + (b*)<sup>d</sup></span> <span class="ts">00:32:44·B</span>. A great heuristic pushes b* toward 1.0. And since h₂(n) ≥ h₁(n) for every node, <strong>h₂ dominates h₁</strong> <span class="ts">00:33:50·B</span> — dominance shows up brutally in the deck's Figure 3.26-style table:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <p class="mb-4 text-sm font-medium text-slate-500">Search cost and effective branching factor — deck slide 19 (Figure 3.26, selected rows of 6–28; averages over 100 puzzles) <span class="ts">00:34:57·B</span></p>
+            <table class="w-full text-sm text-center">
+              <thead>
+                <tr class="text-slate-500 border-b border-slate-200">
+                  <th class="py-1 px-3"></th><th colspan="3" class="py-1 px-3 font-semibold border-b border-slate-200">Search cost (nodes generated)</th><th colspan="3" class="py-1 px-3 font-semibold border-b border-slate-200">Effective branching factor b*</th>
+                </tr>
+                <tr class="text-slate-500 border-b border-slate-200">
+                  <th class="py-2 px-3 font-semibold text-left">d</th><th class="py-2 px-3 font-semibold">BFS</th><th class="py-2 px-3 font-semibold text-red-700">A★(h₁)</th><th class="py-2 px-3 font-semibold text-blue-700">A★(h₂)</th><th class="py-2 px-3 font-semibold">BFS</th><th class="py-2 px-3 font-semibold text-red-700">A★(h₁)</th><th class="py-2 px-3 font-semibold text-blue-700">A★(h₂)</th>
+                </tr>
+              </thead>
+              <tbody class="text-slate-700 font-mono">
+                <tr class="border-b border-slate-100"><td class="py-1.5 px-3 text-left">6</td><td>128</td><td class="text-red-700">24</td><td class="text-blue-700 font-bold">19</td><td>2.01</td><td class="text-red-700">1.42</td><td class="text-blue-700 font-bold">1.34</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-1.5 px-3 text-left">12</td><td>2672</td><td class="text-red-700">279</td><td class="text-blue-700 font-bold">84</td><td>1.80</td><td class="text-red-700">1.45</td><td class="text-blue-700 font-bold">1.28</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-1.5 px-3 text-left">18</td><td>41558</td><td class="text-red-700">4102</td><td class="text-blue-700 font-bold">751</td><td>1.72</td><td class="text-red-700">1.49</td><td class="text-blue-700 font-bold">1.34</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-1.5 px-3 text-left">24</td><td>290082</td><td class="text-red-700">53039</td><td class="text-blue-700 font-bold">5733</td><td>1.62</td><td class="text-red-700">1.50</td><td class="text-blue-700 font-bold">1.36</td></tr>
+                <tr><td class="py-1.5 px-3 text-left">28</td><td>463234</td><td class="text-red-700">202565</td><td class="text-blue-700 font-bold">22055</td><td>1.53</td><td class="text-red-700">1.49</td><td class="text-blue-700 font-bold">1.36</td></tr>
+              </tbody>
+            </table>
+            <p class="mt-3 text-sm text-slate-600">The exact numbers the instructor reads off: "if the depth of the solution is six, then you'll have 24 nodes expanded" for h₁ vs 19 for h₂ <span class="ts">00:34:57·B</span>. Given several admissible heuristics, take <span class="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">h(n) = max(h₁(n), …, h_m(n))</span> <span class="ts">00:36:14·B</span> — unless computing the fancy one costs as much as expanding hundreds of nodes <span class="ts">00:37:16·B</span>.</p>
+          </div>
+
+          <div class="flex gap-4 p-5 rounded-xl bg-amber-50 border border-amber-200">
+            <div class="flex-shrink-0 text-amber-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg></div>
+            <div>
+              <p class="font-semibold text-amber-900 mb-1">Programming assignment, announced in-lecture</p>
+              <p class="text-amber-800 text-sm leading-relaxed">Implement <strong>A★ on the 8-puzzle</strong> and reproduce this table yourself <span class="ts">00:34:20·B</span>, <span class="ts">00:35:33·B</span>.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ SECTION: IDA* ═══════════ -->
+      <section id="sec-idastar" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 text-amber-700 text-sm font-bold">B</span>
+          IDA★ — A★'s guarantees without A★'s memory bill
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">A★'s pseudo-code keeps OPEN and CLOSED lists of everything it has seen <span class="ts">00:38:54·B</span> (ties resolved <em>in favor of goal nodes</em>; a rediscovered node keeps the smaller f and re-points its parent <span class="ts">00:40:34·B</span>) — and that memory is what kills it: A★ solves the 8-puzzle but <em>not</em> the 15-puzzle <span class="ts">00:41:09·B</span>. <strong>Iterative Deepening A★</strong> (Korf) reruns depth-first sweeps with a rising <em>f-cost</em> cutoff instead of a depth cutoff:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm">
+            <p class="mb-4 text-sm font-medium text-slate-500">The IDA★ threshold schedule <span class="ts">00:42:49·B</span></p>
+            <div class="flex flex-wrap items-center justify-center gap-3">
+              <div class="px-4 py-3 rounded-lg bg-blue-50 border border-blue-200 text-center">
+                <p class="text-xs text-blue-700 font-medium mb-0.5">Round 1 cutoff</p>
+                <p class="font-mono font-bold text-blue-900">f-limit = h(start)</p>
+              </div>
+              <svg class="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+              <div class="px-4 py-3 rounded-lg bg-blue-50 border border-blue-200 text-center">
+                <p class="text-xs text-blue-700 font-medium mb-0.5">DFS, discard anything over</p>
+                <p class="font-mono font-bold text-blue-900">f(n) &gt; f-limit → cut</p>
+              </div>
+              <svg class="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+              <div class="px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-center">
+                <p class="text-xs text-emerald-700 font-medium mb-0.5">Next round cutoff</p>
+                <p class="font-mono font-bold text-emerald-900">min f that overshot</p>
+              </div>
+            </div>
+            <p class="mt-4 text-sm text-slate-600 text-center">"Here we use the frontier node cost" <span class="ts">00:42:15·B</span> — repeat until the goal falls inside the contour.</p>
+          </div>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <p class="mb-4 text-sm font-medium text-slate-500">A★ vs IDA★ — deck slide 23 <span class="ts">00:42:49·B</span></p>
+            <table class="w-full text-sm">
+              <thead><tr class="text-left text-slate-500 border-b border-slate-200"><th class="py-2 pr-4 font-semibold"></th><th class="py-2 pr-4 font-semibold">A★</th><th class="py-2 font-semibold">IDA★</th></tr></thead>
+              <tbody class="text-slate-700">
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4 font-medium">Time</td><td class="pr-4">exponential</td><td>exponential — "IDA★ cannot outperform A★ when it comes to this"</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4 font-medium">Space</td><td class="pr-4 text-red-600 font-medium">exponential (in most cases)</td><td class="text-emerald-600 font-medium">linear — ≈ b·d nodes, "proportional to the longest path it explores"</td></tr>
+                <tr><td class="py-2 pr-4 font-medium">Can solve</td><td class="pr-4">8-puzzle, <span class="text-red-600">not the 15-puzzle</span></td><td><span class="text-emerald-600">the 15-puzzle</span> — but not the 24-puzzle</td></tr>
+              </tbody>
+            </table>
+            <p class="mt-3 text-sm text-slate-600">Each puzzle size defeats one more generation of algorithm — exactly the "we shall see why" promised back at <span class="ts">00:08:25·A</span>.</p>
+          </div>
+        </div>
+      </section>
+      <!-- ═══════════ SECTION: MINIMAX ═══════════ -->
+      <section id="sec-minimax" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 text-sm font-bold">C</span>
+          Minimax — "the most basic game playing algorithm in AI"
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">Part C's world has a hostile agent in it: "game playing is an idealization of worlds in which there are hostile agents that act so as to diminish one's well-being" <span class="ts">00:01:42·C</span>. Two players — <strong class="text-blue-700">Max</strong> wants the pay-off high, <strong class="text-red-700">Min</strong> wants it low, Max moves first <span class="ts">00:11:20·C</span> — and Max needs a strategy that wins "regardless of what Min does" <span class="ts">00:11:56·C</span>. Assuming a perfect opponent, values flow <em>up</em> the tree. Step the backup:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <p class="text-sm font-medium text-slate-500">The deck's worked two-ply tree <span class="ts">00:16:43·C</span></p>
+              <div class="flex items-center gap-2">
+                <button id="mm-prev" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">← Back</button>
+                <button id="mm-step" class="stepbtn px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold shadow-sm">Step ▸</button>
+                <button id="mm-reset" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">Reset</button>
+              </div>
+            </div>
+            <div id="mm-tree"></div>
+            <p id="mm-caption" class="mt-3 text-sm text-slate-600 text-center font-medium min-h-[2.5rem]"></p>
+          </div>
+
+          <div class="rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+            <div class="flex items-center gap-2 px-4 py-2.5 bg-slate-800 text-slate-300 text-sm font-mono">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+              <span>Minimax — deck slide 10</span>
+              <span class="ml-auto text-slate-500 text-xs">[00:13:45·C]</span>
+            </div>
+            <pre class="!m-0 !rounded-none"><code class="language-clike">Minimax(s) =
+  Utility(s, Max)                               if IsTerminal(s)
+  max over a in Actions(s): Minimax(Result(s,a))   if To-Move(s) = Max
+  min over a in Actions(s): Minimax(Result(s,a))   if To-Move(s) = Min</code></pre>
+          </div>
+
+          <div class="grid md:grid-cols-3 gap-4">
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Scale check</p>
+              <p class="text-sm text-slate-600 leading-relaxed">Tic-tac-toe: 362,880 terminal nodes, 5,478 distinct states. Chess: ~10<sup>40</sup> nodes <span class="ts">00:13:14·C</span>. One move = one ply = two half-moves in this deck's vocabulary <span class="ts">00:12:33·C</span>.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Costs</p>
+              <p class="text-sm text-slate-600 leading-relaxed">Time <strong>O(b<sup>m</sup>)</strong> — "impractical because it is exponential in the depth" — but space is linear, because minimax is depth-first <span class="ts">00:14:57·C</span>.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">More than two players?</p>
+              <p class="text-sm text-slate-600 leading-relaxed">Back up <strong>vectors</strong> of utilities, one entry per player; each player maximizes its own component — "B will be looking at the second value" <span class="ts">00:19:36·C</span>.</p>
+            </div>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed">Real games add a clock, so perfect play gets two surgical replacements <span class="ts">00:23:47·C</span>: the utility function becomes an <strong>evaluation function</strong> (an estimate), and the terminal test becomes a <strong>cut-off test</strong> (e.g. stop at depth 4). "Minimax still applies. It's the same principle" <span class="ts">00:23:16·C</span> — but computing the full tree first is wasteful. "Can we do better?" <span class="ts">00:24:24·C</span></p>
+        </div>
+      </section>
+
+      <!-- ═══════════ SECTION: ALPHA-BETA ═══════════ -->
+      <section id="sec-alphabeta" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 text-sm font-bold">C</span>
+          Alpha-beta pruning — skip what cannot matter
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">Same tree as before, but this time watch the <em>bookkeeping</em>: α is the best Max is already guaranteed ("at least"), β the best Min can hold Max to ("at most") <span class="ts">00:28:53·C</span>. The moment a node's value falls outside the α–β window, its remaining children become irrelevant — "we can prune the tree because this part of the tree is now irrelevant" <span class="ts">00:26:01·C</span>:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <p class="text-sm font-medium text-slate-500">Prune the last subtree — the deck's own example <span class="ts">00:25:28·C</span></p>
+              <div class="flex items-center gap-2">
+                <button id="ab-prev" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">← Back</button>
+                <button id="ab-step" class="stepbtn px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold shadow-sm">Step ▸</button>
+                <button id="ab-reset" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">Reset</button>
+              </div>
+            </div>
+            <div id="ab-tree"></div>
+            <p id="ab-caption" class="mt-3 text-sm text-slate-600 text-center font-medium min-h-[2.5rem]"></p>
+          </div>
+
+          <div class="flex gap-4 p-5 rounded-xl bg-violet-50 border border-violet-200">
+            <div class="flex-shrink-0 text-violet-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg></div>
+            <div>
+              <p class="font-semibold text-violet-900 mb-1">The general rule</p>
+              <p class="text-violet-800 text-sm leading-relaxed">If a player can move to node n, but already has a better choice at the same level or anywhere higher up the path, the player will <strong>never move to n</strong> — prune at n <span class="ts">00:28:13·C</span>.</p>
+            </div>
+          </div>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <p class="mb-4 text-sm font-medium text-slate-500">Everything depends on move ordering <span class="ts">00:29:59·C</span></p>
+            <table class="w-full text-sm">
+              <thead><tr class="text-left text-slate-500 border-b border-slate-200"><th class="py-2 pr-4 font-semibold">Ordering of successors</th><th class="py-2 pr-4 font-semibold">Time</th><th class="py-2 font-semibold">Chess effect (b ≈ 35)</th></tr></thead>
+              <tbody class="text-slate-700">
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4">None — plain minimax</td><td class="pr-4 font-mono">O(b<sup>m</sup>)</td><td>35 branches everywhere</td></tr>
+                <tr class="border-b border-slate-100 bg-emerald-50"><td class="py-2 pr-4 font-medium text-emerald-800">Perfect (best first)</td><td class="pr-4 font-mono text-emerald-700 font-bold">O(b<sup>m/2</sup>)</td><td class="text-emerald-800 font-medium">effective b drops to √35 ≈ 6 — "a big, big reduction" <span class="ts">00:31:11·C</span></td></tr>
+                <tr><td class="py-2 pr-4">Random</td><td class="pr-4 font-mono">O(b<sup>3m/4</sup>)</td><td>somewhere in between</td></tr>
+              </tbody>
+            </table>
+            <p class="mt-3 text-sm text-slate-600">The recipe that earns the good row: examine <strong>captures</strong> first, then <strong>threats</strong>, then <strong>forward moves</strong>, then <strong>backward moves</strong> <span class="ts">00:31:11·C</span>.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ SECTION: EVAL FUNCTIONS ═══════════ -->
+      <section id="sec-evalfn" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 text-sm font-bold">C</span>
+          Evaluation functions &amp; the chess bag of tricks
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">With ~35<sup>100</sup> nodes in a 50-move chess game <span class="ts">00:33:58·C</span>, the knowledge has to live in <code>Eval(s, p)</code> — "an estimate of the expected utility" bounded between the losing and winning utilities <span class="ts">00:33:22·C</span>. Chess counts material plus positional features:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm">
+            <p class="mb-4 text-sm font-medium text-slate-500">Material values + positional corrections <span class="ts">00:34:38·C</span></p>
+            <div class="flex flex-wrap items-stretch justify-center gap-3">
+              <div class="px-4 py-3 rounded-lg bg-slate-50 border border-slate-200 text-center min-w-[4.5rem]"><p class="text-2xl">♙</p><p class="text-xs text-slate-500 font-medium">pawn</p><p class="font-mono font-bold text-slate-800">1</p></div>
+              <div class="px-4 py-3 rounded-lg bg-slate-50 border border-slate-200 text-center min-w-[4.5rem]"><p class="text-2xl">♘</p><p class="text-xs text-slate-500 font-medium">knight</p><p class="font-mono font-bold text-slate-800">3</p></div>
+              <div class="px-4 py-3 rounded-lg bg-slate-50 border border-slate-200 text-center min-w-[4.5rem]"><p class="text-2xl">♗</p><p class="text-xs text-slate-500 font-medium">bishop</p><p class="font-mono font-bold text-slate-800">3</p></div>
+              <div class="px-4 py-3 rounded-lg bg-slate-50 border border-slate-200 text-center min-w-[4.5rem]"><p class="text-2xl">♖</p><p class="text-xs text-slate-500 font-medium">rook</p><p class="font-mono font-bold text-slate-800">5</p></div>
+              <div class="px-4 py-3 rounded-lg bg-slate-50 border border-slate-200 text-center min-w-[4.5rem]"><p class="text-2xl">♕</p><p class="text-xs text-slate-500 font-medium">queen</p><p class="font-mono font-bold text-slate-800">9</p></div>
+              <div class="px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-center"><p class="text-xs text-emerald-700 font-medium mb-1">pawn defends pawn</p><p class="font-mono font-bold text-emerald-700">+0.5</p></div>
+              <div class="px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-center"><p class="text-xs text-red-700 font-medium mb-1">isolated pawn</p><p class="font-mono font-bold text-red-700">−1/3</p></div>
+            </div>
+            <p class="mt-4 text-sm text-slate-600 text-center">Fast version: a weighted linear sum <span class="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">Eval(s) = Σᵢ wᵢ·fᵢ(s)</span> — which silently assumes features are independent <span class="ts">00:37:22·C</span>; positional features are nonlinear (an isolated pawn depends on <em>other</em> pawns), where a neural network can serve as the approximator <span class="ts">00:36:50·C</span>.</p>
+          </div>
+
+          <div class="flex gap-4 p-5 rounded-xl bg-amber-50 border border-amber-200">
+            <div class="flex-shrink-0 text-amber-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+            <div>
+              <p class="font-semibold text-amber-900 mb-1">The base-level / meta-level trade-off — promised at <span class="ts">00:08:07·C</span>, collected here</p>
+              <p class="text-amber-800 text-sm leading-relaxed">Time spent <em>deciding</em> (meta-level: computing a fancy Eval) must be recovered by reductions in time spent <em>solving</em> (base-level: expanding nodes) <span class="ts">00:07:35·C</span>. If Eval is too expensive, "probably it's better to come up with a simpler evaluation function and spend the time evaluating nodes" <span class="ts">00:36:17·C</span>.</p>
+            </div>
+          </div>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm">
+            <p class="mb-4 text-sm font-medium text-slate-500">The horizon effect, as a three-panel strip <span class="ts">00:38:24·C</span></p>
+            <div class="grid md:grid-cols-3 gap-4">
+              <div class="p-4 rounded-lg bg-slate-50 border border-slate-200">
+                <p class="text-xs font-bold text-slate-500 mb-2">PANEL 1 — the threat</p>
+                <p class="text-3xl mb-2">😱</p>
+                <p class="text-sm text-slate-700 leading-relaxed">A threat looks unavoidable within the program's lookahead — say 14 moves, Deep Blue's horizon <span class="ts">00:39:18·C</span>.</p>
+              </div>
+              <div class="p-4 rounded-lg bg-amber-50 border border-amber-200">
+                <p class="text-xs font-bold text-amber-600 mb-2">PANEL 2 — the dodge</p>
+                <p class="text-3xl mb-2">🙈</p>
+                <p class="text-sm text-amber-800 leading-relaxed">Instead of dealing with it, the program plays "a nuisance check" — useless moves that push the threat <em>past</em> move 14. Out of sight, out of Eval.</p>
+              </div>
+              <div class="p-4 rounded-lg bg-red-50 border border-red-200">
+                <p class="text-xs font-bold text-red-600 mb-2">PANEL 3 — the bill</p>
+                <p class="text-3xl mb-2">💥</p>
+                <p class="text-sm text-red-800 leading-relaxed">The threat was never neutralized — and "it is difficult to distinguish between a move that really neutralizes the threat and one that just pushes it over the horizon" <span class="ts">00:39:49·C</span>.</p>
+              </div>
+            </div>
+            <p class="mt-4 text-sm text-slate-600">Counter-measures: <strong>secondary search</strong> under the apparently best move, and the <strong>killer heuristic</strong> — examine the opponent's strongest reply early <span class="ts">00:40:34·C</span>.</p>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">When Eval can't be trusted: hot subtrees</p>
+              <p class="text-sm text-slate-600 leading-relaxed mb-2"><strong>Quiescence search</strong>: during lengthy piece exchanges, values swing fast and "become unreliable" <span class="ts">00:41:13·C</span> — keep expanding until positions go quiet <span class="ts">00:41:45·C</span>.</p>
+              <p class="text-sm text-slate-600 leading-relaxed"><strong>Singular extensions</strong> (Anantharaman et al., 1990): dig deeper when one opponent reply is vastly better than the rest — "believed to be the reason why Deep Thought outperformed its predecessor, HiTech" <span class="ts">00:42:52·C</span>.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Pruning harder, and not searching at all</p>
+              <p class="text-sm text-slate-600 leading-relaxed mb-2"><strong>ProbCut</strong>: alpha-beta prunes what is <em>provably</em> outside the window; ProbCut prunes what is <em>probably</em> outside, using a shallow search plus past experience <span class="ts">00:43:59·C</span>.</p>
+              <p class="text-sm text-slate-600 leading-relaxed"><strong>Lookup tables</strong>: openings (Sicilian, French, Ruy Lopez) and endgames (KRK, KBNK) come from human experts — though KBNK tables can hold ~400 trillion entries <span class="ts">00:45:40·C</span>.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <!-- ═══════════ SECTION: MCTS ═══════════ -->
+      <section id="sec-mcts" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 text-sm font-bold">C</span>
+          Monte Carlo Tree Search — the algorithm Go demanded
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">Go breaks alpha-beta twice <span class="ts">00:47:15·C</span>: branching factor over <strong>360</strong> (alpha-beta manages 4–5 ply) and no good evaluation function — "material value is not a good indicator" and "most positions are in flux until the endgame" <span class="ts">00:47:49·C</span>. MCTS's answer: <em>stop evaluating, start playing</em> — "the value of a state is estimated as the average utility over a number of simulations of complete games" <span class="ts">00:47:49·C</span>. Step one full iteration on the deck's own numbers:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <p class="text-sm font-medium text-slate-500">Selection → Expansion → Simulation → Back-propagation <span class="ts">00:50:03·C</span></p>
+              <div class="flex items-center gap-2">
+                <button id="mc-prev" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">← Back</button>
+                <button id="mc-step" class="stepbtn px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold shadow-sm">Step ▸</button>
+                <button id="mc-reset" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">Reset</button>
+              </div>
+            </div>
+            <div id="mc-tree"></div>
+            <p id="mc-caption" class="mt-3 text-sm text-slate-600 text-center font-medium min-h-[2.5rem]"></p>
+          </div>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm">
+            <p class="mb-4 text-sm font-medium text-slate-500">From the actual deck — the MCTS iteration figure, laser on the 27/35 node <span class="ts">00:51:20·C</span></p>
+            <img src="frames/3C/point-005139.png" alt="Deck slide 29: MCTS selection step, instructor pointing at the 27/35 child chosen by the selection policy" class="deckimg w-full" loading="lazy" onclick="openImageZoom(this)">
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Vocabulary</p>
+              <ul class="space-y-1.5 text-sm text-slate-600">
+                <li><strong>Playout</strong>: simulate both players to a terminal position; those moves are <em>not</em> recorded in the tree <span class="ts">00:51:57·C</span>.</li>
+                <li><strong>Playout policy</strong>: biases simulated moves toward good ones — learned from self-play with neural networks <span class="ts">00:48:53·C</span>.</li>
+                <li><strong>Selection policy</strong>: balances <em>exploration</em> of little-tried states vs <em>exploitation</em> of past winners <span class="ts">00:49:32·C</span>.</li>
+                <li>Final answer: the move with the <strong>highest playout count</strong>.</li>
+              </ul>
+            </div>
+            <div class="p-5 rounded-xl bg-sky-50 border border-sky-200">
+              <p class="font-semibold text-sky-900 mb-2">MCTS vs alpha-beta — the exam comparison <span class="ts">00:53:44·C</span></p>
+              <ul class="space-y-1.5 text-sm text-sky-800">
+                <li>Huge branching factor (Go) → <strong>MCTS better</strong>: a playout is linear in depth.</li>
+                <li>Wobbly evaluation values → <strong>MCTS less vulnerable</strong> — averages over many games.</li>
+                <li>One move can change everything (chess tactics) → <strong>alpha-beta still preferred</strong> <span class="ts">00:54:17·C</span>.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ SECTION: STOCHASTIC ═══════════ -->
+      <section id="sec-stochastic" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 text-sm font-bold">C</span>
+          Stochastic games — dice in the tree, and a famous trap
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">Backgammon interleaves a third kind of node between Max and Min: <strong>chance nodes</strong>, one branch per die roll (doubles at probability 1/36, non-doubles 1/18) <span class="ts">00:55:20·C</span>. Minimax gains a fourth case — weight each roll's subtree by its probability <span class="ts">00:56:20·C</span>:</p>
+
+          <div class="rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+            <div class="flex items-center gap-2 px-4 py-2.5 bg-slate-800 text-slate-300 text-sm font-mono">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+              <span>Expectiminimax — deck slide 32</span>
+              <span class="ml-auto text-slate-500 text-xs">[00:55:50·C]</span>
+            </div>
+            <pre class="!m-0 !rounded-none"><code class="language-clike">Expectiminimax(s) =
+  Utility(s, Max)                                       if IsTerminal(s)
+  max over a: Expectiminimax(Result(s,a))               if To-Move(s) = Max
+  min over a: Expectiminimax(Result(s,a))               if To-Move(s) = Min
+  sum over r: P(r) * Expectiminimax(Result(s,r))        if To-Move(s) = Chance</code></pre>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed">"We have to be a little careful about interpreting the chance nodes because it could give wrong results" <span class="ts">00:56:56·C</span>. The deck's twin trees prove it: same shape, same probabilities (.9/.1), and the right tree's leaves are just an <strong>order-preserving transformation</strong> of the left's — yet the decision flips. Drag the slider:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
+              <p class="text-sm font-medium text-slate-500">The chance-node trap <span class="ts">00:57:36·C</span> — leaf scale morphs, ordering never changes</p>
+              <div class="flex items-center gap-3 min-w-[16rem] flex-1 max-w-sm">
+                <span class="text-xs font-mono text-slate-500 whitespace-nowrap">2·3·1·4</span>
+                <input id="st-slider" type="range" min="0" max="100" value="0" class="flex-1 cursor-grab active:cursor-grabbing" aria-label="Morph leaf values">
+                <span class="text-xs font-mono text-slate-500 whitespace-nowrap">20·30·1·400</span>
+              </div>
+            </div>
+            <div id="st-tree"></div>
+            <p id="st-caption" class="mt-3 text-sm text-slate-600 text-center font-medium min-h-[2.5rem]"></p>
+          </div>
+
+          <div class="flex gap-4 p-5 rounded-xl bg-emerald-50 border border-emerald-200">
+            <div class="flex-shrink-0 text-emerald-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+            <div>
+              <p class="font-semibold text-emerald-900 mb-1">The fix</p>
+              <p class="text-emerald-800 text-sm leading-relaxed">Use an evaluation function whose values are a <strong>positive linear transformation of the probability of winning</strong> from that position <span class="ts">00:58:08·C</span> — probabilities are the one scale expectation respects. That closes the lecture <span class="ts">00:58:40·C</span>.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ SECTION: CHECKLIST ═══════════ -->
+      <section id="sec-checklist" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-blue-700 text-sm font-bold">✓</span>
+          Exam checklist — the whole of Lecture 3 on one card
+        </h2>
+        <div class="space-y-6">
+          <div class="flex items-center gap-1.5 p-1 rounded-lg bg-slate-100 border border-slate-200 w-fit">
+            <button data-clfilter="all" class="cl-filter stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">All</button>
+            <button data-clfilter="A" class="cl-filter stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">Part A</button>
+            <button data-clfilter="B" class="cl-filter stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">Part B</button>
+            <button data-clfilter="C" class="cl-filter stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">Part C</button>
+          </div>
+          <div class="my-4 p-6 bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <table class="w-full text-sm" id="cl-table">
+              <thead><tr class="text-left text-slate-500 border-b border-slate-200"><th class="py-2 pr-3 font-semibold w-12">Part</th><th class="py-2 pr-3 font-semibold">Be able to…</th><th class="py-2 font-semibold whitespace-nowrap">Where</th></tr></thead>
+              <tbody class="text-slate-700">
+                <tr data-part="A" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-red-600">A</td><td>Run the formulate → search → execute loop; define goal, action, search algorithm precisely</td><td class="ts">00:00:39</td></tr>
+                <tr data-part="A" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-red-600">A</td><td>Classify a scenario into the four problem types; give the vacuum-world witness for each</td><td class="ts">00:13:24</td></tr>
+                <tr data-part="A" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-red-600">A</td><td>Formulate 8-puzzle and BOTH 8-queens formulations; quote 2,057 vs 2.8×10¹⁵</td><td class="ts">00:33:54</td></tr>
+                <tr data-part="A" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-red-600">A</td><td>Reproduce GENERAL-SEARCH, the node's 5 fields, and the 4 queue operations</td><td class="ts">00:47:17</td></tr>
+                <tr data-part="A" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-red-600">A</td><td>BFS: queue-end, complete, optimal (non-decreasing cost), O(b^d) both; argue "time beats memory" from the 35-years table</td><td class="ts">01:06:25</td></tr>
+                <tr data-part="A" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-red-600">A</td><td>UCS: expand min g(n); BFS = UCS with g = depth; needs non-negative operator costs</td><td class="ts">01:08:19</td></tr>
+                <tr data-part="A" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-red-600">A</td><td>DFS: queue-front, O(bm) space, neither complete nor optimal — both failure modes</td><td class="ts">01:12:18</td></tr>
+                <tr data-part="A" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-red-600">A</td><td>IDS: complete + optimal at O(bd) space; b=2 costs only 2× a full BFS; the preferred blind method</td><td class="ts">01:18:04</td></tr>
+                <tr data-part="A" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-red-600">A</td><td>Bidirectional: O(b^(d/2)) and the three backward-search obstacles (chess!)</td><td class="ts">01:20:48</td></tr>
+                <tr data-part="A" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-red-600">A</td><td>Reproduce the six-strategy comparison table with its caveat superscripts</td><td class="ts">01:22:25</td></tr>
+                <tr data-part="B" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">B</td><td>State where knowledge enters GENERAL-SEARCH (the queuing function) and define the evaluation function</td><td class="ts">00:01:44</td></tr>
+                <tr data-part="B" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">B</td><td>Greedy = h only; walk Arad→Bucharest to the 450 km path; show the Iasi→Fagaras failure</td><td class="ts">00:09:47</td></tr>
+                <tr data-part="B" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">B</td><td>A★ = g + h; walk the tree to the 418 km path; define admissible and h(goal) = 0</td><td class="ts">00:16:41</td></tr>
+                <tr data-part="B" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">B</td><td>Reproduce the optimality proof by contradiction; state pathmax and monotonicity</td><td class="ts">00:22:30</td></tr>
+                <tr data-part="B" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">B</td><td>Compute h₁ = 7 and h₂ = 18 on the deck's board; argue why both are admissible; define dominance</td><td class="ts">00:29:27</td></tr>
+                <tr data-part="B" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">B</td><td>Define effective branching factor via N = 1 + b* + … + (b*)^d; read Figure 3.26</td><td class="ts">00:32:44</td></tr>
+                <tr data-part="B" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">B</td><td>A★ pseudo-code details: OPEN/CLOSED, goal-favoring ties, keep smaller f on rediscovery</td><td class="ts">00:38:54</td></tr>
+                <tr data-part="B" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">B</td><td>IDA★: f-cost cutoff schedule, linear ≈ b·d space, solves the 15-puzzle (not the 24)</td><td class="ts">00:42:15</td></tr>
+                <tr data-part="B" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">B</td><td>Do the programming assignment: A★ on the 8-puzzle, reproduce the table</td><td class="ts">00:34:20</td></tr>
+                <tr data-part="C" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">C</td><td>Bridge the vocabularies (perfect info ↔ fully observable…); name the 3 sources of uncertainty</td><td class="ts">00:02:59</td></tr>
+                <tr data-part="C" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">C</td><td>List the formal game model: S₀, To-Move, Actions, IsTerminal, Utility(s, p)</td><td class="ts">00:08:37</td></tr>
+                <tr data-part="C" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">C</td><td>Hand-run minimax on a two-ply tree (B=3, C=2, D=2 ⇒ A=3, action a₁); vectors for multiplayer</td><td class="ts">00:16:43</td></tr>
+                <tr data-part="C" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">C</td><td>Define α and β; state the prune-at-n rule; prune a tree by hand</td><td class="ts">00:28:53</td></tr>
+                <tr data-part="C" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">C</td><td>Move ordering: O(b^(m/2)) perfect vs O(b^(3m/4)) random; 35 → 6; captures-threats-forward-backward</td><td class="ts">00:29:59</td></tr>
+                <tr data-part="C" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">C</td><td>Chess Eval: 1/3/3/5/9, +0.5 structure, −1/3 isolated; linear form's independence assumption</td><td class="ts">00:34:38</td></tr>
+                <tr data-part="C" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">C</td><td>Explain horizon effect + secondary search vs killer heuristic; quiescence; singular extensions; ProbCut</td><td class="ts">00:38:24</td></tr>
+                <tr data-part="C" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">C</td><td>Run one MCTS iteration updating wins/playouts by hand; when MCTS beats alpha-beta and when not</td><td class="ts">00:50:03</td></tr>
+                <tr data-part="C"><td class="py-1.5 pr-3 font-bold text-emerald-600">C</td><td>Write expectiminimax's 4 cases; reproduce the 2.1→40.9 decision flip and its fix</td><td class="ts">00:55:50</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="text-sm text-slate-500">Timestamps refer to each part's own transcript in <code>_generated/transcripts/</code>. The full prose treatment of every row lives in <code>Lecture-3-diy-handout.md</code> — this page is the picture, that file is the words.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Diagram zoom overlay -->
+  <div class="diagram-overlay" id="diagram-overlay" onclick="closeDiagramZoom()">
+    <div class="diagram-overlay-inner" id="diagram-overlay-inner" onclick="event.stopPropagation()"></div>
+    <div class="diagram-overlay-hint">Click outside or press Esc to close &middot; Drag or scroll to pan</div>
+  </div>
+
+  <script>
+    // ═══ Theme-aware color helper ═══
+    function isDarkMode() { return document.documentElement.classList.contains('dark'); }
+    function getVizColors() {
+      const dark = isDarkMode();
+      return {
+        bg: dark ? '#0f172a' : '#ffffff',
+        surface: dark ? '#1e293b' : '#f8fafc',
+        border: dark ? '#334155' : '#e2e8f0',
+        text: dark ? '#e2e8f0' : '#1e293b',
+        textMuted: dark ? '#94a3b8' : '#64748b',
+        primary: dark ? '#60a5fa' : '#3b82f6',
+        primaryFaint: dark ? '#172554' : '#dbeafe',
+        success: dark ? '#34d399' : '#10b981',
+        successFaint: dark ? '#064e3b' : '#f0fdf4',
+        error: dark ? '#f87171' : '#ef4444',
+        errorFaint: dark ? '#450a0a' : '#fee2e2',
+        warning: dark ? '#fbbf24' : '#f59e0b',
+        warningFaint: dark ? '#451a03' : '#fef3c7',
+        accent: dark ? '#c4b5fd' : '#8b5cf6',
+        accentFaint: dark ? '#1a0f2e' : '#f5f3ff',
+        glow: dark ? 'rgba(96,165,250,0.3)' : 'rgba(59,130,246,0.15)',
+      };
+    }
+    const themeChangeCallbacks = [];
+    function onThemeChange(cb) { themeChangeCallbacks.push(cb); }
+
+    // ═══ Mermaid ═══
+    const mermaidSources = [];
+    document.querySelectorAll('.mermaid').forEach((el, i) => {
+      mermaidSources.push(el.innerHTML.trim());
+      el.setAttribute('data-idx', i);
+    });
+    function initMermaid(isDark) {
+      mermaid.initialize({
+        startOnLoad: false, theme: 'base',
+        themeVariables: isDark ? mermaidThemes.dark : mermaidThemes.light,
+        flowchart: { curve: 'basis', padding: 20 },
+      });
+    }
+    function swapNodeColors(source, isDark) {
+      if (!isDark) return source;
+      let s = source;
+      for (const { light, dark } of nodeColorSwaps) {
+        s = s.replaceAll(light[0], dark[0]).replaceAll(light[1], dark[1]).replaceAll(light[2], dark[2]);
+      }
+      return s;
+    }
+
+    // ═══ Zoom overlay (mermaid SVG + deck images) ═══
+    function openDiagramZoom(e) {
+      const svg = e.currentTarget;
+      const overlay = document.getElementById('diagram-overlay');
+      const inner = document.getElementById('diagram-overlay-inner');
+      const clone = svg.cloneNode(true);
+      clone.style.maxWidth = 'none';
+      clone.style.width = 'auto';
+      clone.style.height = 'auto';
+      clone.style.minWidth = Math.max(svg.viewBox.baseVal.width, 800) + 'px';
+      clone.style.cursor = 'default';
+      inner.innerHTML = '';
+      inner.appendChild(clone);
+      overlay.classList.add('open');
+      document.body.style.overflow = 'hidden';
+      setupDragToPan(inner);
+    }
+    function openImageZoom(img) {
+      const overlay = document.getElementById('diagram-overlay');
+      const inner = document.getElementById('diagram-overlay-inner');
+      const clone = img.cloneNode(true);
+      clone.style.maxWidth = 'none';
+      clone.style.width = 'min(1600px, 160vw)';
+      clone.style.cursor = 'default';
+      clone.onclick = null;
+      inner.innerHTML = '';
+      inner.appendChild(clone);
+      overlay.classList.add('open');
+      document.body.style.overflow = 'hidden';
+      setupDragToPan(inner);
+    }
+    function closeDiagramZoom() {
+      document.getElementById('diagram-overlay').classList.remove('open');
+      document.body.style.overflow = '';
+    }
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDiagramZoom(); });
+    function setupDragToPan(el) {
+      let isDragging = false, startX, startY, scrollLeft, scrollTop;
+      el.onmousedown = (e) => {
+        isDragging = true;
+        el.classList.add('dragging');
+        startX = e.pageX - el.offsetLeft;
+        startY = e.pageY - el.offsetTop;
+        scrollLeft = el.scrollLeft;
+        scrollTop = el.scrollTop;
+        e.preventDefault();
+      };
+      el.onmousemove = (e) => {
+        if (!isDragging) return;
+        const dx = e.pageX - el.offsetLeft - startX;
+        const dy = e.pageY - el.offsetTop - startY;
+        el.scrollLeft = scrollLeft - dx;
+        el.scrollTop = scrollTop - dy;
+      };
+      el.onmouseup = el.onmouseleave = () => {
+        isDragging = false;
+        el.classList.remove('dragging');
+      };
+      let tX, tY, tL, tT;
+      el.ontouchstart = (e) => {
+        const t = e.touches[0];
+        tX = t.pageX; tY = t.pageY; tL = el.scrollLeft; tT = el.scrollTop;
+      };
+      el.ontouchmove = (e) => {
+        const t = e.touches[0];
+        el.scrollLeft = tL - (t.pageX - tX);
+        el.scrollTop = tT - (t.pageY - tY);
+        e.preventDefault();
+      };
+    }
+
+    async function renderMermaid() {
+      if (mermaidSources.length === 0) return;
+      const dark = isDarkMode();
+      document.querySelectorAll('.mermaid').forEach(el => {
+        const idx = el.getAttribute('data-idx');
+        el.removeAttribute('data-processed');
+        el.innerHTML = swapNodeColors(mermaidSources[idx], dark);
+      });
+      await mermaid.run({ querySelector: '.mermaid' });
+      document.querySelectorAll('.mermaid svg').forEach(svg => {
+        svg.removeEventListener('click', openDiagramZoom);
+        svg.addEventListener('click', openDiagramZoom);
+      });
+    }
+
+    // ═══ Theme toggle ═══
+    function updateToggleIcons() {
+      const dark = isDarkMode();
+      document.getElementById('icon-sun').classList.toggle('hidden', !dark);
+      document.getElementById('icon-moon').classList.toggle('hidden', dark);
+    }
+    function toggleTheme() {
+      const willBeDark = !isDarkMode();
+      document.documentElement.classList.toggle('dark', willBeDark);
+      localStorage.setItem('ve-theme', willBeDark ? 'dark' : 'light');
+      updateToggleIcons();
+      initMermaid(willBeDark);
+      renderMermaid();
+      themeChangeCallbacks.forEach(cb => cb(willBeDark));
+      window.dispatchEvent(new CustomEvent('theme-change', { detail: { dark: willBeDark } }));
+    }
+    if (localStorage.getItem('ve-theme') === 'light') document.documentElement.classList.remove('dark');
+    updateToggleIcons();
+    initMermaid(isDarkMode());
+    renderMermaid();
+
+    // ═══ Scroll-spy + section fade ═══
+    const tocLinks = document.querySelectorAll('.toc-link');
+    const sections = document.querySelectorAll('section[id]');
+    const tocObs = new IntersectionObserver(entries => {
+      entries.forEach(e => { if (e.isIntersecting) {
+        tocLinks.forEach(l => l.classList.remove('active'));
+        const a = document.querySelector(`.toc-link[href="#${e.target.id}"]`);
+        if (a) a.classList.add('active');
+      }});
+    }, { rootMargin: '-20% 0px -75% 0px' });
+    sections.forEach(s => tocObs.observe(s));
+    const animObs = new IntersectionObserver(entries => {
+      entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+    }, { threshold: 0.08 });
+    document.querySelectorAll('.section-animate').forEach(el => animObs.observe(el));
+    document.querySelectorAll('.toc-link, #toc-mobile a').forEach(link => {
+      link.addEventListener('click', () => {
+        const targetId = link.getAttribute('href')?.replace('#', '');
+        if (!targetId) return;
+        const target = document.getElementById(targetId);
+        if (target && target.classList.contains('section-animate')) target.classList.add('visible');
+        document.querySelectorAll('.section-animate').forEach(el => {
+          if (el.getBoundingClientRect().top < window.innerHeight * 1.5) el.classList.add('visible');
+        });
+      });
+    });
+
+    Prism.highlightAll();
+  </script>
+
+  <script>
+  // ═══ VIZ 1: knowledge/search spectrum ═══
+  (function() {
+    const host = document.getElementById('viz-spectrum');
+    if (!host) return;
+    host.innerHTML = `
+      <div class="relative pt-8 pb-2">
+        <div class="flex h-4 rounded-full overflow-hidden border border-slate-200">
+          <div class="flex-1 bg-gradient-to-r from-red-400 to-red-300" title="blind"></div>
+          <div class="flex-1 bg-gradient-to-r from-amber-400 to-amber-300" title="heuristic"></div>
+          <div class="flex-1 bg-gradient-to-r from-emerald-400 to-emerald-300" title="adversarial"></div>
+        </div>
+        <div id="spectrum-marker" class="absolute top-0 -ml-4 transition-none" style="left:16.6%; --stop2:0px; --stop3:0px; animation: spectrum-slide 9s ease-in-out infinite;">
+          <div class="w-8 h-8 rounded-full bg-white border-2 border-blue-500 shadow-lg flex items-center justify-center text-sm">🔍</div>
+        </div>
+        <div class="flex text-center mt-3 text-xs font-medium">
+          <div class="flex-1"><p class="text-red-600 font-bold">A · zero knowledge</p><p class="text-slate-500">maximum search — O(b<sup>d</sup>) everywhere</p></div>
+          <div class="flex-1"><p class="text-amber-600 font-bold">B · an estimate h(n)</p><p class="text-slate-500">less search — b* → 1 as h sharpens</p></div>
+          <div class="flex-1"><p class="text-emerald-600 font-bold">C · opponent + clock</p><p class="text-slate-500">search what matters — prune the rest</p></div>
+        </div>
+      </div>`;
+    // set the CSS-var stops once widths are known
+    function setStops() {
+      const bar = host.querySelector('.flex.h-4');
+      const w = bar ? bar.getBoundingClientRect().width : 0;
+      const m = document.getElementById('spectrum-marker');
+      if (m && w) { m.style.setProperty('--stop2', (w/3) + 'px'); m.style.setProperty('--stop3', (2*w/3) + 'px'); }
+    }
+    setStops();
+    window.addEventListener('resize', setStops);
+  })();
+
+  // ═══ VIZ 2: BFS vs DFS queue mechanics ═══
+  (function() {
+    const bfsTreeEl = document.getElementById('qv-bfs-tree');
+    if (!bfsTreeEl) return;
+    const dfsTreeEl = document.getElementById('qv-dfs-tree');
+    const bfsQEl = document.getElementById('qv-bfs-queue');
+    const dfsQEl = document.getElementById('qv-dfs-queue');
+    const cap = document.getElementById('qv-caption');
+    // Tree: 1 -> 2,3 ; 2 -> 4,5 ; 3 -> 6,7 (nodes 4..7 are leaves)
+    const pos = {1:[150,28], 2:[80,88], 3:[220,88], 4:[45,150], 5:[115,150], 6:[185,150], 7:[255,150]};
+    const edges = [[1,2],[1,3],[2,4],[2,5],[3,6],[3,7]];
+    // steps: {done:[], current:null, queue:[], cap}
+    const bfsSteps = [
+      { done:[], cur:1, q:[1], t:"Both start the same: the root sits alone in the queue." },
+      { done:[1], cur:null, q:[2,3], t:"Expand 1 → children go to the BACK: queue is [2, 3]." },
+      { done:[1,2], cur:null, q:[3,4,5], t:"Expand 2 → 4 and 5 join BEHIND 3. The sibling 3 goes next — level order." },
+      { done:[1,2,3], cur:null, q:[4,5,6,7], t:"Expand 3 → the whole of level 2 now waits, in discovery order." },
+      { done:[1,2,3,4], cur:null, q:[5,6,7], t:"Level 2 is processed left to right…" },
+      { done:[1,2,3,4,5,6,7], cur:null, q:[], t:"…every node at depth d before any node at depth d+1 [00:59:38·A]." },
+    ];
+    const dfsSteps = [
+      { done:[], cur:1, q:[1], t:"" },
+      { done:[1], cur:null, q:[2,3], t:"Expand 1 → same picture so far. The difference is about to bite." },
+      { done:[1,2], cur:null, q:[4,5,3], t:"Expand 2 → 4 and 5 CUT IN FRONT of 3. Depth wins over breadth." },
+      { done:[1,2,4], cur:null, q:[5,3], t:"4 is a leaf — pop it, goal-test it, backtrack. 3 still waits." },
+      { done:[1,2,4,5], cur:null, q:[3], t:"5 popped too. Only now does the OTHER side of the tree get a turn." },
+      { done:[1,2,4,5,3,6,7], cur:null, q:[], t:"3 expands last — DFS drained an entire subtree first [01:10:01·A]." },
+    ];
+    let step = 0;
+    const maxStep = bfsSteps.length - 1;
+    function tree(el, st, color) {
+      const c = getVizColors();
+      let s = `<svg viewBox="0 0 300 178" class="w-full max-w-[300px] mx-auto" role="img">`;
+      for (const [a,b] of edges) {
+        s += `<line x1="${pos[a][0]}" y1="${pos[a][1]}" x2="${pos[b][0]}" y2="${pos[b][1]}" stroke="${c.border}" stroke-width="1.5"/>`;
+      }
+      for (const n of Object.keys(pos)) {
+        const id = Number(n);
+        const done = st.done.includes(id);
+        const isCur = st.cur === id;
+        const inQ = st.q.includes(id);
+        const fill = done ? color : inQ ? c.warningFaint : c.surface;
+        const stroke = done ? color : inQ ? c.warning : c.border;
+        const txt = done ? '#ffffff' : c.text;
+        s += `<g${isCur ? ' class="viz-glow"' : ''}><circle cx="${pos[n][0]}" cy="${pos[n][1]}" r="15" fill="${fill}" stroke="${stroke}" stroke-width="2"/><text x="${pos[n][0]}" y="${pos[n][1]+4.5}" text-anchor="middle" font-size="13" font-weight="600" fill="${txt}">${n}</text></g>`;
+      }
+      s += `</svg>`;
+      el.innerHTML = s;
+    }
+    function chips(el, q, color) {
+      el.innerHTML = q.length
+        ? `<span class="text-xs text-slate-500 font-medium mr-1">front →</span>` + q.map(n =>
+            `<span class="px-2.5 py-1 rounded-md text-xs font-bold text-white" style="background:${color}">${n}</span>`).join('')
+          + `<span class="text-xs text-slate-500 font-medium ml-1">← back</span>`
+        : `<span class="text-xs text-slate-400 italic">queue empty — search over</span>`;
+    }
+    function render() {
+      const c = getVizColors();
+      tree(bfsTreeEl, bfsSteps[step], c.success);
+      tree(dfsTreeEl, dfsSteps[step], c.error);
+      chips(bfsQEl, bfsSteps[step].q, c.success);
+      chips(dfsQEl, dfsSteps[step].q, c.error);
+      cap.textContent = dfsSteps[step].t || bfsSteps[step].t;
+    }
+    document.getElementById('qv-step').addEventListener('click', () => { if (step < maxStep) { step++; render(); } });
+    document.getElementById('qv-prev').addEventListener('click', () => { if (step > 0) { step--; render(); } });
+    document.getElementById('qv-reset').addEventListener('click', () => { step = 0; render(); });
+    onThemeChange(render);
+    render();
+  })();
+
+  // ═══ VIZ 3: Romania — greedy vs A★ ═══
+  (function() {
+    const mapEl = document.getElementById('ro-map');
+    if (!mapEl) return;
+    const cap = document.getElementById('ro-caption');
+    const frontEl = document.getElementById('ro-frontier');
+    const P = { Oradea:[205,38], Zerind:[160,92], Arad:[120,150], Timisoara:[105,255], Lugoj:[205,290], Mehadia:[215,345], Drobeta:[205,400], Craiova:[360,405], Rimnicu:[320,235], Sibiu:[285,172], Fagaras:[435,185], Pitesti:[430,300], Bucharest:[560,340], Giurgiu:[525,410], Urziceni:[655,315], Hirsova:[775,305], Eforie:[805,370], Vaslui:[715,205], Iasi:[660,125], Neamt:[585,75] };
+    const E = [["Oradea","Zerind",71],["Zerind","Arad",75],["Oradea","Sibiu",151],["Arad","Sibiu",140],["Arad","Timisoara",118],["Timisoara","Lugoj",111],["Lugoj","Mehadia",70],["Mehadia","Drobeta",75],["Drobeta","Craiova",120],["Craiova","Rimnicu",146],["Craiova","Pitesti",138],["Rimnicu","Sibiu",80],["Rimnicu","Pitesti",97],["Sibiu","Fagaras",99],["Fagaras","Bucharest",211],["Pitesti","Bucharest",101],["Bucharest","Giurgiu",90],["Bucharest","Urziceni",85],["Urziceni","Vaslui",142],["Urziceni","Hirsova",98],["Hirsova","Eforie",86],["Vaslui","Iasi",92],["Iasi","Neamt",87]];
+    // label placement tweaks: name above node by default; below for these
+    const below = new Set(["Arad","Timisoara","Drobeta","Craiova","Giurgiu","Eforie","Pitesti","Urziceni"]);
+    const GREEDY = [
+      { exp:[], front:[["Arad","h=366"]], path:[], t:"Blind no more: every city carries h = straight-line distance to Bucharest. Start at Arad, h = 366." },
+      { exp:["Arad"], front:[["Sibiu","h=253"],["Timisoara","h=329"],["Zerind","h=374"]], path:[["Arad","Sibiu"],["Arad","Timisoara"],["Arad","Zerind"]], t:"Expand Arad. Greedy looks ONLY at h: Sibiu 253 beats Timisoara 329 and Zerind 374 [00:09:47·B]." },
+      { exp:["Arad","Sibiu"], front:[["Fagaras","h=178"],["Rimnicu","h=193"],["Arad","h=366"],["Oradea","h=380"]], path:[["Arad","Sibiu"],["Sibiu","Fagaras"],["Sibiu","Rimnicu"],["Sibiu","Oradea"]], t:"Expand Sibiu. Fagaras (178) looks closest — Rimnicu (193) is ignored. That choice costs 32 km." },
+      { exp:["Arad","Sibiu","Fagaras"], front:[["Bucharest","h=0 ✓"]], path:[["Arad","Sibiu"],["Sibiu","Fagaras"],["Fagaras","Bucharest"]], goal:true, t:"Expand Fagaras — “there you are. You have your goal, Bucharest” [00:11:23·B]. Path: Arad–Sibiu–Fagaras–Bucharest = 140+99+211 = 450 km. Fast, but not optimal." },
+    ];
+    const ASTAR = [
+      { exp:[], front:[["Arad","0+366=366"]], path:[], t:"A★ scores f = g + h: distance already driven PLUS the straight-line estimate [00:16:41·B]." },
+      { exp:["Arad"], front:[["Sibiu","140+253=393"],["Timisoara","118+329=447"],["Zerind","75+374=449"]], path:[["Arad","Sibiu"],["Arad","Timisoara"],["Arad","Zerind"]], t:"Expand Arad. “253 is your H. I got that from here” — the SLD table — added to g = 140 [00:20:14·B]. Sibiu wins at 393." },
+      { exp:["Arad","Sibiu"], front:[["Rimnicu","220+193=413"],["Fagaras","239+178=417"],["Timisoara","447"],["Zerind","449"],["Oradea","146+380=526"],["Arad","280+366=646"]], path:[["Arad","Sibiu"],["Sibiu","Fagaras"],["Sibiu","Rimnicu"],["Sibiu","Oradea"]], t:"Expand Sibiu. Now the sums disagree with greedy: Rimnicu 413 &lt; Fagaras 417 — the 32 km greedy ignored are in g." },
+      { exp:["Arad","Sibiu","Rimnicu"], front:[["Pitesti","317+98=415"],["Fagaras","417"],["Timisoara","447"],["Craiova","366+160=526"],["Sibiu","300+253=553"]], path:[["Arad","Sibiu"],["Sibiu","Rimnicu"],["Rimnicu","Pitesti"],["Rimnicu","Craiova"]], t:"Expand Rimnicu (413) → Pitesti comes in at 317+98 = 415. “Look at this sum and choose the one with the smallest value” [00:20:51·B]." },
+      { exp:["Arad","Sibiu","Rimnicu","Pitesti"], front:[["Fagaras","417"],["Bucharest","418+0=418"],["Timisoara","447"]], path:[["Arad","Sibiu"],["Sibiu","Rimnicu"],["Rimnicu","Pitesti"],["Pitesti","Bucharest"]], t:"Expand Pitesti → Bucharest at f = 418. One frontier node is still smaller: Fagaras, 417." },
+      { exp:["Arad","Sibiu","Rimnicu","Pitesti","Fagaras"], front:[["Bucharest","418 ✓"]], path:[["Arad","Sibiu"],["Sibiu","Rimnicu"],["Rimnicu","Pitesti"],["Pitesti","Bucharest"]], goal:true, t:"Fagaras (417) gets its look — its Bucharest costs 450, worse — and 418 is accepted. Path: Arad–Sibiu–Rimnicu–Pitesti–Bucharest = 418 km. Optimal, guaranteed by admissible h." },
+    ];
+    let mode = 'greedy', step = 0;
+    function steps() { return mode === 'greedy' ? GREEDY : ASTAR; }
+    function render() {
+      const c = getVizColors();
+      const st = steps()[step];
+      const pathSet = new Set(st.path.map(e => e[0] + '|' + e[1]));
+      const accent = mode === 'greedy' ? c.warning : c.primary;
+      let s = `<svg viewBox="0 0 860 440" class="w-full" role="img">`;
+      for (const [a,b,km] of E) {
+        const on = pathSet.has(a+'|'+b) || pathSet.has(b+'|'+a);
+        const mx = (P[a][0]+P[b][0])/2, my = (P[a][1]+P[b][1])/2;
+        s += `<line x1="${P[a][0]}" y1="${P[a][1]}" x2="${P[b][0]}" y2="${P[b][1]}" stroke="${on ? accent : c.border}" stroke-width="${on ? 3.5 : 1.5}"/>`;
+        s += `<text x="${mx}" y="${my-4}" text-anchor="middle" font-size="9.5" fill="${c.textMuted}">${km}</text>`;
+      }
+      const frontNames = new Set(st.front.map(f => f[0]));
+      for (const name of Object.keys(P)) {
+        const isExp = st.exp.includes(name);
+        const isFront = frontNames.has(name);
+        const isGoal = name === 'Bucharest' && st.goal;
+        const r = isExp || isFront || isGoal ? 8 : 5;
+        const fill = isGoal ? c.success : isExp ? accent : isFront ? c.warningFaint : c.surface;
+        const stroke = isGoal ? c.success : isExp ? accent : isFront ? c.warning : c.textMuted;
+        s += `<g${isGoal ? ' class="viz-glow"' : ''}><circle cx="${P[name][0]}" cy="${P[name][1]}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
+        const dy = below.has(name) ? 20 : -12;
+        s += `<text x="${P[name][0]}" y="${P[name][1]+dy}" text-anchor="middle" font-size="11.5" font-weight="${isExp||isFront||isGoal ? 700 : 500}" fill="${c.text}">${name === 'Rimnicu' ? 'Rimnicu Vilcea' : name}</text></g>`;
+      }
+      s += `</svg>`;
+      mapEl.innerHTML = s;
+      cap.innerHTML = st.t;
+      frontEl.innerHTML = `<span class="text-xs text-slate-500 font-medium mr-1">frontier:</span>` + st.front.map(([n,v],i) =>
+        `<span class="px-2.5 py-1 rounded-md text-xs font-mono font-semibold ${i===0 ? 'text-white' : ''}" style="${i===0 ? 'background:'+accent : 'background:'+c.warningFaint+';color:'+c.text+';border:1px solid '+c.warning}">${n} ${v}</span>`).join('');
+      document.getElementById('ro-mode-greedy').style.cssText = mode==='greedy' ? 'background:'+c.warning+';color:#fff' : 'color:'+c.textMuted;
+      document.getElementById('ro-mode-astar').style.cssText = mode==='astar' ? 'background:'+c.primary+';color:#fff' : 'color:'+c.textMuted;
+    }
+    document.getElementById('ro-mode-greedy').addEventListener('click', () => { mode='greedy'; step=0; render(); });
+    document.getElementById('ro-mode-astar').addEventListener('click', () => { mode='astar'; step=0; render(); });
+    document.getElementById('ro-step').addEventListener('click', () => { if (step < steps().length-1) { step++; render(); } });
+    document.getElementById('ro-prev').addEventListener('click', () => { if (step > 0) { step--; render(); } });
+    document.getElementById('ro-reset').addEventListener('click', () => { step=0; render(); });
+    onThemeChange(render);
+    render();
+  })();
+  </script>
+
+  <script>
+  // ═══ VIZ 4: 8-puzzle h1 vs h2 ═══
+  (function() {
+    const host = document.getElementById('hp-boards');
+    if (!host) return;
+    const cap = document.getElementById('hp-caption');
+    const start = [[5,4,0],[6,1,8],[7,3,2]];
+    const goal  = [[1,2,3],[8,0,4],[7,6,5]];
+    const goalPos = {}; goal.forEach((row,r)=>row.forEach((v,cx)=>{ if(v) goalPos[v]=[r,cx]; }));
+    const md = {}; start.forEach((row,r)=>row.forEach((v,cx)=>{ if(v) md[v]=Math.abs(goalPos[v][0]-r)+Math.abs(goalPos[v][1]-cx); }));
+    let mode = 'h1', picked = null;
+    function board(grid, label, isStart) {
+      const c = getVizColors();
+      let s = `<div><p class="text-center text-xs font-semibold text-slate-500 mb-2">${label}</p><div class="grid grid-cols-3 gap-1.5">`;
+      grid.forEach((row,r)=>row.forEach((v,cx)=>{
+        if (!v) { s += `<div class="w-14 h-14 rounded-lg" style="background:${c.surface};border:1.5px dashed ${c.border}"></div>`; return; }
+        const wrong = md[v] > 0;
+        const isPicked = picked === v;
+        let bg = c.surface, bd = c.border, txt = c.text, badge = '';
+        if (mode === 'h1') {
+          if (isStart && wrong) { bg = c.errorFaint; bd = c.error; }
+          if (isStart && !wrong) { bg = c.successFaint; bd = c.success; }
+        } else {
+          if (isStart) { bg = md[v] ? c.primaryFaint : c.successFaint; bd = md[v] ? c.primary : c.success; badge = `<span class="absolute -top-1.5 -right-1.5 text-[10px] font-bold px-1 rounded" style="background:${md[v]?c.primary:c.success};color:#fff">${md[v]}</span>`; }
+        }
+        if (isPicked) bd = c.accent;
+        s += `<div class="relative w-14 h-14 rounded-lg flex items-center justify-center text-lg font-bold cursor-pointer transition-transform hover:scale-105" style="background:${bg};border:2px solid ${bd};color:${txt}" data-tile="${v}">${v}${isStart?badge:''}</div>`;
+      }));
+      s += `</div></div>`;
+      return s;
+    }
+    function render() {
+      host.innerHTML = board(start, 'Start state — deck slide 17', true)
+        + `<div class="text-3xl text-slate-300 font-light">→</div>`
+        + board(goal, 'Goal state', false);
+      const c = getVizColors();
+      if (mode === 'h1') {
+        cap.innerHTML = `h₁ counts tiles out of place: every tile except <strong>7</strong> is wrong → <strong>h₁ = 7</strong>. Admissible: an out-of-place tile must move at least once <span class="ts">00:29:27·B</span>.`;
+      } else if (picked) {
+        const [gr,gc] = goalPos[picked];
+        let pr, pc; start.forEach((row,r)=>row.forEach((v,cx)=>{ if(v===picked){pr=r;pc=cx;} }));
+        cap.innerHTML = `Tile <strong>${picked}</strong>: ${Math.abs(gr-pr)} vertical + ${Math.abs(gc-pc)} horizontal = <strong>${md[picked]} moves minimum</strong>. Sum over all tiles: <strong>h₂ = ${Object.values(md).reduce((a,b)=>a+b,0)}</strong>.`;
+      } else {
+        cap.innerHTML = `h₂ sums each tile's city-block distance home — "five has to move this way" <span class="ts">00:31:07·B</span>: 4+2+2+2+2+0+3+3 = <strong>h₂ = 18</strong>. Also admissible, and never smaller than h₁ — so <strong>h₂ dominates</strong>.`;
+      }
+      document.getElementById('hp-mode-h1').style.cssText = mode==='h1' ? 'background:'+c.error+';color:#fff' : 'color:'+c.textMuted;
+      document.getElementById('hp-mode-h2').style.cssText = mode==='h2' ? 'background:'+c.primary+';color:#fff' : 'color:'+c.textMuted;
+      host.querySelectorAll('[data-tile]').forEach(el => el.addEventListener('click', () => { picked = Number(el.getAttribute('data-tile')); mode = 'h2'; render(); }));
+    }
+    document.getElementById('hp-mode-h1').addEventListener('click', () => { mode='h1'; picked=null; render(); });
+    document.getElementById('hp-mode-h2').addEventListener('click', () => { mode='h2'; picked=null; render(); });
+    onThemeChange(render);
+    render();
+  })();
+
+  // ═══ VIZ 5: minimax backup ═══
+  (function() {
+    const host = document.getElementById('mm-tree');
+    if (!host) return;
+    const cap = document.getElementById('mm-caption');
+    const leaves = [[3,12,8],[2,4,6],[14,5,2]];
+    const mins = [3,2,2];
+    const steps = [
+      { fill:0, t:"Max to move at A; below, Min chooses at B, C, D. Terminal pay-offs at the leaves [00:16:43·C]." },
+      { fill:1, t:"“Since min chooses the minimum, it will have this value 3 here” — B = min(3, 12, 8) = 3 [00:17:17·C]." },
+      { fill:2, t:"C = min(2, 4, 6) = 2. Min is doing its worst." },
+      { fill:3, t:"D = min(14, 5, 2) = 2 — that promising 14 is a mirage; Min will never allow it." },
+      { fill:4, t:"A = max(3, 2, 2) = 3 → “the correct action for max is action a₁” [00:17:50·C]." },
+    ];
+    let step = 0;
+    function render() {
+      const c = getVizColors();
+      const st = steps[step];
+      const W = 640, rootX = W/2;
+      const bx = [140, 320, 500];
+      let s = `<svg viewBox="0 0 ${W} 250" class="w-full max-w-[640px] mx-auto" role="img">`;
+      const rootDone = st.fill >= 4;
+      for (let i = 0; i < 3; i++) {
+        const chosen = rootDone && i === 0;
+        s += `<line x1="${rootX}" y1="42" x2="${bx[i]}" y2="112" stroke="${chosen ? c.success : c.border}" stroke-width="${chosen ? 3.5 : 1.5}"${chosen ? ' class="viz-glow"' : ''}/>`;
+        s += `<text x="${(rootX+bx[i])/2 + (i===0?-12:12)}" y="${74}" font-size="11" font-style="italic" fill="${chosen ? c.success : c.textMuted}">a${i+1}</text>`;
+        for (let j = 0; j < 3; j++) {
+          const lx = bx[i] + (j-1)*52;
+          s += `<line x1="${bx[i]}" y1="128" x2="${lx}" y2="192" stroke="${c.border}" stroke-width="1.5"/>`;
+          s += `<circle cx="${lx}" cy="200" r="14" fill="${c.surface}" stroke="${c.textMuted}" stroke-width="1.5"/>`;
+          s += `<text x="${lx}" y="204.5" text-anchor="middle" font-size="11.5" font-weight="600" fill="${c.text}">${leaves[i][j]}</text>`;
+        }
+        const done = st.fill >= i+1;
+        s += `<g${st.fill === i+1 ? ' class="viz-glow"' : ''}><polygon points="${bx[i]-18},112 ${bx[i]+18},112 ${bx[i]},140" fill="${done ? c.errorFaint : c.surface}" stroke="${c.error}" stroke-width="2"/>`;
+        s += `<text x="${bx[i]}" y="${126}" text-anchor="middle" font-size="12" font-weight="700" fill="${done ? c.error : c.textMuted}">${done ? mins[i] : '?'}</text></g>`;
+        s += `<text x="${bx[i]+30}" y="118" font-size="10" fill="${c.textMuted}">${['B','C','D'][i]} · MIN</text>`;
+      }
+      s += `<g${rootDone ? ' class="viz-glow"' : ''}><polygon points="${rootX-20},42 ${rootX+20},42 ${rootX},10" fill="${rootDone ? c.primaryFaint : c.surface}" stroke="${c.primary}" stroke-width="2" transform="rotate(180 ${rootX} 26)"/>`;
+      s += `<text x="${rootX}" y="31" text-anchor="middle" font-size="12.5" font-weight="700" fill="${rootDone ? c.primary : c.textMuted}">${rootDone ? '3' : '?'}</text></g>`;
+      s += `<text x="${rootX+32}" y="22" font-size="10" fill="${c.textMuted}">A · MAX</text>`;
+      s += `</svg>`;
+      host.innerHTML = s;
+      cap.innerHTML = st.t;
+    }
+    document.getElementById('mm-step').addEventListener('click', () => { if (step < steps.length-1) { step++; render(); } });
+    document.getElementById('mm-prev').addEventListener('click', () => { if (step > 0) { step--; render(); } });
+    document.getElementById('mm-reset').addEventListener('click', () => { step=0; render(); });
+    onThemeChange(render);
+    render();
+  })();
+
+  // ═══ VIZ 6: alpha-beta pruning ═══
+  (function() {
+    const host = document.getElementById('ab-tree');
+    if (!host) return;
+    const cap = document.getElementById('ab-caption');
+    const steps = [
+      { bDone:false, cSeen:0, pruned:false, dSeen:0, root:false, t:"Same shape as the minimax tree — but two of C's leaves (x, y) are expensive to evaluate. Do we need them?" },
+      { bDone:true, cSeen:0, pruned:false, dSeen:0, root:false, t:"B = min(3, 12, 8) = 3. Max is now guaranteed AT LEAST 3: α = 3 at the root." },
+      { bDone:true, cSeen:1, pruned:false, dSeen:0, root:false, t:"C's first leaf is 2, so C = min(2, x, y) ≤ 2 — already below α = 3." },
+      { bDone:true, cSeen:1, pruned:true, dSeen:0, root:false, t:"“We can prune the tree because this part of the tree is now irrelevant” [00:26:01·C] — whatever x and y are, Max will never pick C. ✂" },
+      { bDone:true, cSeen:1, pruned:true, dSeen:3, root:false, t:"D = min(14, 5, 2) = 2 — also under α. Only B survives the comparison." },
+      { bDone:true, cSeen:1, pruned:true, dSeen:3, root:true, t:"Root = max(3, ≤2, 2) = 3 — identical answer to full minimax, without evaluating x or y. Perfect ordering makes this saving systematic: O(b^(m/2)) [00:29:59·C]." },
+    ];
+    let step = 0;
+    function render() {
+      const c = getVizColors();
+      const st = steps[step];
+      const W = 640, rootX = W/2, bx = [140, 320, 500];
+      const leaves = [["3","12","8"],["2","x","y"],["14","5","2"]];
+      let s = `<svg viewBox="0 0 ${W} 260" class="w-full max-w-[640px] mx-auto" role="img">`;
+      for (let i = 0; i < 3; i++) {
+        const chosen = st.root && i === 0;
+        s += `<line x1="${rootX}" y1="42" x2="${bx[i]}" y2="112" stroke="${chosen ? c.success : c.border}" stroke-width="${chosen ? 3.5 : 1.5}"/>`;
+        for (let j = 0; j < 3; j++) {
+          const lx = bx[i] + (j-1)*52;
+          const isPrunedLeaf = i === 1 && j > 0 && st.pruned;
+          const seen = (i===0 && st.bDone) || (i===1 && j < st.cSeen) || (i===2 && j < st.dSeen);
+          s += `<line x1="${bx[i]}" y1="128" x2="${lx}" y2="192" stroke="${isPrunedLeaf ? c.error : c.border}" stroke-width="1.5"${isPrunedLeaf ? ' stroke-dasharray="4 3"' : ''}/>`;
+          s += `<circle cx="${lx}" cy="200" r="14" fill="${isPrunedLeaf ? c.errorFaint : seen ? c.primaryFaint : c.surface}" stroke="${isPrunedLeaf ? c.error : seen ? c.primary : c.textMuted}" stroke-width="1.5" opacity="${isPrunedLeaf ? 0.65 : 1}"/>`;
+          s += `<text x="${lx}" y="204.5" text-anchor="middle" font-size="11.5" font-weight="600" fill="${isPrunedLeaf ? c.error : c.text}" font-style="${i===1&&j>0?'italic':'normal'}">${leaves[i][j]}</text>`;
+          if (isPrunedLeaf) s += `<line x1="${lx-10}" y1="${190}" x2="${lx+10}" y2="${210}" stroke="${c.error}" stroke-width="2"/>`;
+        }
+        const label = i===0 ? (st.bDone ? '3' : '?') : i===1 ? (st.cSeen ? '≤2' : '?') : (st.dSeen===3 ? '2' : '?');
+        const active = i===0 ? st.bDone : i===1 ? st.cSeen>0 : st.dSeen===3;
+        s += `<polygon points="${bx[i]-18},112 ${bx[i]+18},112 ${bx[i]},140" fill="${active ? c.errorFaint : c.surface}" stroke="${c.error}" stroke-width="2"/>`;
+        s += `<text x="${bx[i]}" y="126" text-anchor="middle" font-size="11.5" font-weight="700" fill="${active ? c.error : c.textMuted}">${label}</text>`;
+      }
+      if (st.pruned) s += `<text x="${bx[1]+55}" y="176" font-size="20">✂️</text>`;
+      if (st.bDone) s += `<rect x="${rootX+34}" y="14" rx="5" width="86" height="22" fill="${c.warningFaint}" stroke="${c.warning}"/><text x="${rootX+77}" y="29" text-anchor="middle" font-size="10.5" font-weight="700" fill="${c.text}">α = 3 · β = +∞</text>`;
+      s += `<polygon points="${rootX-20},42 ${rootX+20},42 ${rootX},10" fill="${st.root ? c.primaryFaint : c.surface}" stroke="${c.primary}" stroke-width="2" transform="rotate(180 ${rootX} 26)"/>`;
+      s += `<text x="${rootX}" y="31" text-anchor="middle" font-size="12.5" font-weight="700" fill="${st.root ? c.primary : c.textMuted}">${st.root ? '3' : '?'}</text>`;
+      s += `</svg>`;
+      host.innerHTML = s;
+      cap.innerHTML = st.t;
+    }
+    document.getElementById('ab-step').addEventListener('click', () => { if (step < steps.length-1) { step++; render(); } });
+    document.getElementById('ab-prev').addEventListener('click', () => { if (step > 0) { step--; render(); } });
+    document.getElementById('ab-reset').addEventListener('click', () => { step=0; render(); });
+    onThemeChange(render);
+    render();
+  })();
+  </script>
+
+  <script>
+  // ═══ VIZ 7: MCTS iteration ═══
+  (function() {
+    const host = document.getElementById('mc-tree');
+    if (!host) return;
+    const cap = document.getElementById('mc-caption');
+    // Exact deck slide 29 tree. Layout: [x, y]
+    const N = {
+      root: { x: 320, y: 30,  v0: '37/100', v1: '37/101' },
+      a:    { x: 160, y: 105, v0: '60/79',  v1: '61/80'  },
+      b:    { x: 400, y: 105, v0: '1/10',   v1: '1/10'   },
+      c:    { x: 540, y: 105, v0: '2/11',   v1: '2/11'   },
+      a1:   { x: 90,  y: 180, v0: '3/26',   v1: '3/26'   },
+      a2:   { x: 230, y: 180, v0: '16/53',  v1: '16/54'  },
+      b1:   { x: 360, y: 180, v0: '6/6',    v1: '6/6'    },
+      b2:   { x: 470, y: 180, v0: '3/4',    v1: '3/4'    },
+      a2a:  { x: 175, y: 255, v0: '27/35',  v1: '28/36'  },
+      a2b:  { x: 285, y: 255, v0: '10/18',  v1: '10/18'  },
+      b1a:  { x: 325, y: 255, v0: '0/3',    v1: '0/3'    },
+      b1b:  { x: 400, y: 255, v0: '0/3',    v1: '0/3'    },
+      fresh:{ x: 175, y: 330, v0: '0/0',    v1: '0/1'    },
+    };
+    const EDGES = [['root','a'],['root','b'],['root','c'],['a','a1'],['a','a2'],['b','b1'],['b','b2'],['a2','a2a'],['a2','a2b'],['b1','b1a'],['b1','b1b']];
+    const PATH = [['root','a'],['a','a2'],['a2','a2a']];
+    const steps = [
+      { sel:false, fresh:false, sim:false, back:false, t:"The tree so far. Every node reads wins/playouts — the root has won 37 of its 100 playouts [00:50:41·C]." },
+      { sel:true, fresh:false, sim:false, back:false, t:"1 · SELECTION — the selection policy walks down: 37/100 → 60/79 → 16/53 → 27/35, trading exploration against exploitation [00:51:20·C]." },
+      { sel:true, fresh:true, sim:false, back:false, t:"2 · EXPANSION — grow the tree: a brand-new child (0/0) of the selected node [00:51:57·C]." },
+      { sel:true, fresh:true, sim:true, back:false, t:"3 · SIMULATION — play a full game from the new node using the playout policy; those moves are never recorded in the tree. Result: black wins [00:51:57·C]." },
+      { sel:true, fresh:true, sim:false, back:true, t:"4 · BACK-PROPAGATION — “from 27, it has become 28” [00:52:33·C]: 27/35→28/36, 16/53→16/54 (white: playout only), 60/79→61/80, root→37/101." },
+    ];
+    let step = 0;
+    function render() {
+      const c = getVizColors();
+      const st = steps[step];
+      const pathSet = new Set(PATH.map(e => e.join('|')));
+      let s = `<svg viewBox="0 0 640 ${st.fresh || st.back ? 385 : 300}" class="w-full max-w-[640px] mx-auto" role="img">`;
+      for (const [p,q] of EDGES) {
+        const on = st.sel && pathSet.has(p+'|'+q);
+        s += `<line x1="${N[p].x}" y1="${N[p].y}" x2="${N[q].x}" y2="${N[q].y}" stroke="${on ? c.accent : c.border}" stroke-width="${on ? 3.5 : 1.5}"/>`;
+      }
+      if (st.fresh) s += `<line x1="${N.a2a.x}" y1="${N.a2a.y}" x2="${N.fresh.x}" y2="${N.fresh.y}" stroke="${c.success}" stroke-width="2.5" stroke-dasharray="${step===2 ? '5 4' : 'none'}"/>`;
+      if (st.sim) s += `<path d="M ${N.fresh.x} ${N.fresh.y+16} q 12 14 -4 26 q -14 11 2 24" fill="none" stroke="${c.warning}" stroke-width="2.5" stroke-dasharray="6 4"/><text x="${N.fresh.x+14}" y="${N.fresh.y+62}" font-size="12" font-weight="700" fill="${c.warning}">black wins</text>`;
+      for (const key of Object.keys(N)) {
+        if (key === 'fresh' && !st.fresh) continue;
+        const n = N[key];
+        const changed = st.back && n.v0 !== n.v1;
+        const onPath = st.sel && (key === 'root' || PATH.some(e => e[1] === key));
+        const val = st.back ? n.v1 : n.v0;
+        const fill = changed ? c.successFaint : onPath ? c.accentFaint : c.surface;
+        const stroke = changed ? c.success : onPath ? c.accent : c.border;
+        s += `<g${(key==='fresh' && step===2) || (changed && step===4) ? ' class="viz-glow"' : ''}>`;
+        s += `<ellipse cx="${n.x}" cy="${n.y}" rx="30" ry="16" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
+        s += `<text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="11.5" font-weight="700" fill="${changed ? c.success : c.text}">${val}</text></g>`;
+        if (st.back && changed) s += `<text x="${n.x+38}" y="${n.y+4}" font-size="10" font-weight="700" fill="${c.success}">+1</text>`;
+      }
+      s += `</svg>`;
+      host.innerHTML = s;
+      cap.innerHTML = st.t;
+    }
+    document.getElementById('mc-step').addEventListener('click', () => { if (step < steps.length-1) { step++; render(); } });
+    document.getElementById('mc-prev').addEventListener('click', () => { if (step > 0) { step--; render(); } });
+    document.getElementById('mc-reset').addEventListener('click', () => { step=0; render(); });
+    onThemeChange(render);
+    render();
+  })();
+
+  // ═══ VIZ 8: expectiminimax trap slider ═══
+  (function() {
+    const host = document.getElementById('st-tree');
+    if (!host) return;
+    const cap = document.getElementById('st-caption');
+    const slider = document.getElementById('st-slider');
+    // Order-preserving morph: value v -> exp curve hitting (2→20, 3→30, 1→1, 4→400)
+    const start = [2,3,1,4], end = [20,30,1,400];
+    function leafVals(t) { return start.map((v,i) => v + (end[i]-v)*t); }
+    function fmt(x) { return x >= 100 ? x.toFixed(0) : x >= 10 ? x.toFixed(1) : x.toFixed(2).replace(/\.?0+$/,''); }
+    function render() {
+      const c = getVizColors();
+      const t = Number(slider.value)/100;
+      const L = leafVals(t);
+      const ch1 = 0.9*L[0] + 0.1*L[1];
+      const ch2 = 0.9*L[2] + 0.1*L[3];
+      const pick1 = ch1 >= ch2;
+      const W = 640, rootX = W/2, cx = [200, 440];
+      const chV = [ch1, ch2];
+      let s = `<svg viewBox="0 0 ${W} 265" class="w-full max-w-[640px] mx-auto" role="img">`;
+      for (let i = 0; i < 2; i++) {
+        const chosen = (i===0) === pick1;
+        s += `<line x1="${rootX}" y1="40" x2="${cx[i]}" y2="105" stroke="${chosen ? c.success : c.border}" stroke-width="${chosen ? 4 : 1.5}"/>`;
+        s += `<text x="${(rootX+cx[i])/2 + (i===0?-16:16)}" y="70" font-size="12" font-style="italic" font-weight="${chosen?700:400}" fill="${chosen ? c.success : c.textMuted}">a${i+1}${chosen ? ' ✓' : ''}</text>`;
+        for (let j = 0; j < 2; j++) {
+          const lx = cx[i] + (j===0?-55:55);
+          s += `<line x1="${cx[i]}" y1="122" x2="${lx}" y2="185" stroke="${c.border}" stroke-width="1.5"/>`;
+          s += `<text x="${(cx[i]+lx)/2 + (j===0?-16:16)}" y="155" font-size="10.5" fill="${c.textMuted}">${j===0?'.9':'.1'}</text>`;
+          s += `<rect x="${lx-26}" y="185" width="52" height="26" rx="6" fill="${c.surface}" stroke="${c.textMuted}" stroke-width="1.5"/>`;
+          s += `<text x="${lx}" y="202" text-anchor="middle" font-size="11.5" font-weight="600" fill="${c.text}">${fmt(L[i*2+j])}</text>`;
+        }
+        s += `<circle cx="${cx[i]}" cy="112" r="17" fill="${c.warningFaint}" stroke="${c.warning}" stroke-width="2"/>`;
+        s += `<text x="${cx[i]}" y="108" text-anchor="middle" font-size="8.5" fill="${c.textMuted}">chance</text>`;
+        s += `<text x="${cx[i]}" y="119" text-anchor="middle" font-size="10.5" font-weight="700" fill="${c.text}">${fmt(chV[i])}</text>`;
+      }
+      s += `<polygon points="${rootX-20},40 ${rootX+20},40 ${rootX},8" fill="${c.primaryFaint}" stroke="${c.primary}" stroke-width="2" transform="rotate(180 ${rootX} 24)"/>`;
+      s += `<text x="${rootX+30}" y="20" font-size="10" fill="${c.textMuted}">MAX</text>`;
+      s += `</svg>`;
+      host.innerHTML = s;
+      const t0 = t === 0, t1 = t === 1;
+      cap.innerHTML = `Backed-up values: <span class="font-mono">.9·${fmt(L[0])} + .1·${fmt(L[1])} = <strong>${fmt(ch1)}</strong></span> vs <span class="font-mono">.9·${fmt(L[2])} + .1·${fmt(L[3])} = <strong>${fmt(ch2)}</strong></span> → Max picks <strong>${pick1 ? 'a₁' : 'a₂'}</strong>.`
+        + (t0 ? ` The deck's left tree: “the backup value is 2.1, and therefore we choose action a₁” <span class="ts">00:57:36·C</span>.`
+        : t1 ? ` The deck's right tree: “a₂ is selected because the backup value is higher” (40.9 &gt; 21) <span class="ts">00:57:36·C</span> — <strong>same leaf ordering, opposite decision</strong>.`
+        : pick1 ? ` Keep dragging — the ordering of the four leaves never changes.` : ` <strong>The decision flipped</strong> — and no leaf ever changed rank. Expectation reads <em>magnitudes</em>, not order.`);
+    }
+    slider.addEventListener('input', render);
+    onThemeChange(render);
+    render();
+  })();
+
+  // ═══ Checklist filter ═══
+  (function() {
+    const table = document.getElementById('cl-table');
+    if (!table) return;
+    const btns = document.querySelectorAll('.cl-filter');
+    let active = 'all';
+    function render() {
+      const c = getVizColors();
+      table.querySelectorAll('tbody tr').forEach(tr => {
+        tr.style.display = (active === 'all' || tr.getAttribute('data-part') === active) ? '' : 'none';
+      });
+      btns.forEach(b => {
+        const on = b.getAttribute('data-clfilter') === active;
+        b.style.cssText = on ? 'background:'+c.primary+';color:#fff' : 'color:'+c.textMuted;
+      });
+    }
+    btns.forEach(b => b.addEventListener('click', () => { active = b.getAttribute('data-clfilter'); render(); }));
+    onThemeChange(render);
+    render();
+  })();
+  </script>
+
+</body>
+</html>
