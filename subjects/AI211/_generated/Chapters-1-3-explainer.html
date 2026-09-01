@@ -1,0 +1,1414 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 211 — Chapters 1–3, Visualized</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+      }}}
+    }
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>
+    const mermaidThemes = {
+      light: {
+        primaryColor: '#dbeafe', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6',
+        lineColor: '#64748b', secondaryColor: '#f0fdf4', tertiaryColor: '#fef3c7',
+        fontFamily: 'Inter, system-ui, sans-serif', fontSize: '14px',
+        clusterBkg: '#f8fafc', clusterBorder: '#cbd5e1',
+      },
+      dark: {
+        primaryColor: '#1e3a5f', primaryTextColor: '#e2e8f0', primaryBorderColor: '#60a5fa',
+        lineColor: '#64748b', secondaryColor: '#14352a', tertiaryColor: '#3d2008',
+        fontFamily: 'Inter, system-ui, sans-serif', fontSize: '14px',
+        clusterBkg: '#1e293b', clusterBorder: '#334155', edgeLabelBackground: '#1e293b',
+      }
+    };
+    const nodeColorSwaps = [
+      { light: ['#f0fdf4','#10b981','#065f46'], dark: ['#064e3b','#34d399','#d1fae5'] },
+      { light: ['#fee2e2','#ef4444','#991b1b'], dark: ['#450a0a','#f87171','#fecaca'] },
+      { light: ['#fef3c7','#f59e0b','#92400e'], dark: ['#451a03','#fbbf24','#fde68a'] },
+      { light: ['#dbeafe','#3b82f6','#1e3a5f'], dark: ['#172554','#60a5fa','#bfdbfe'] },
+    ];
+    mermaid.initialize({ startOnLoad: false });
+  </script>
+
+  <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+
+  <style>
+    .scroll-mt-24 { scroll-margin-top: 6rem; }
+    .mermaid { display: flex; justify-content: center; overflow-x: auto; }
+    .mermaid svg { max-width: 100%; height: auto; cursor: zoom-in; }
+    .mermaid svg { overflow: visible !important; }
+    .mermaid svg foreignObject { overflow: visible !important; }
+    .diagram-overlay-inner svg { overflow: visible !important; }
+    .diagram-overlay-inner svg foreignObject { overflow: visible !important; }
+    pre[class*="language-"], pre:has(> code[class*="language-"]) { margin: 0 !important; border-radius: 0 !important; padding: 1.25em !important; }
+
+    .diagram-overlay {
+      position: fixed; inset: 0; z-index: 100;
+      background: rgba(0,0,0,0.85);
+      display: flex; align-items: center; justify-content: center;
+      cursor: zoom-out;
+      opacity: 0; transition: opacity 0.2s ease;
+      pointer-events: none;
+    }
+    .diagram-overlay.open { opacity: 1; pointer-events: auto; }
+    .diagram-overlay-inner {
+      max-width: 95vw; max-height: 90vh;
+      overflow: auto; padding: 24px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .diagram-overlay-inner svg { max-width: none !important; cursor: grab; }
+    .diagram-overlay-inner.dragging { cursor: grabbing; }
+    .diagram-overlay-hint {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      color: #94a3b8; font-size: 13px; font-family: Inter, system-ui, sans-serif;
+      pointer-events: none;
+    }
+    code[class*="language-"] { font-family: 'JetBrains Mono', monospace !important; font-size: 0.875rem !important; }
+    .toc-link { transition: all 0.2s ease; }
+    .toc-link.active { color: #2563eb; font-weight: 600; border-left-color: #2563eb; background-color: #eff6ff; }
+    .section-animate { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease-out, transform 0.6s ease-out; }
+    .section-animate.visible { opacity: 1; transform: translateY(0); }
+    .theme-toggle { transition: all 0.3s ease; }
+    .theme-toggle:hover { transform: rotate(15deg); }
+
+    .viz-container { position: relative; overflow: hidden; }
+    .viz-container svg { display: block; }
+    .ts { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: #64748b; background: #f1f5f9; border-radius: 0.375rem; padding: 0.1rem 0.4rem; white-space: nowrap; }
+    .dark .ts { background: #1e293b; color: #94a3b8; }
+    .stepbtn { cursor: pointer; user-select: none; }
+    .stepbtn:hover { filter: brightness(1.1); }
+    .stepbtn:active { transform: translateY(1px); }
+    .deckimg { border-radius: 0.75rem; border: 1px solid #e2e8f0; cursor: zoom-in; }
+    .dark .deckimg { border-color: #334155; }
+
+    @keyframes glow-pulse {
+      0%, 100% { filter: drop-shadow(0 0 4px rgba(96,165,250,0.4)); }
+      50% { filter: drop-shadow(0 0 12px rgba(96,165,250,0.8)); }
+    }
+    .viz-glow { animation: glow-pulse 2s ease-in-out infinite; }
+
+    @keyframes spectrum-slide {
+      0%, 18% { transform: translateX(0); }
+      33%, 51% { transform: translateX(var(--stop2)); }
+      66%, 84% { transform: translateX(var(--stop3)); }
+      100% { transform: translateX(0); }
+    }
+
+    html.dark { color-scheme: dark; }
+    .dark body { background-color: #0f172a; color: #cbd5e1; }
+    .dark header { background-color: rgba(15, 23, 42, 0.88) !important; border-color: #1e293b !important; }
+    .dark header h1 { color: #f1f5f9 !important; }
+    .dark .bg-white { background-color: #1e293b !important; }
+    .dark .bg-slate-50 { background-color: #0f172a !important; }
+    .dark .border-slate-200 { border-color: #334155 !important; }
+    .dark .bg-slate-200 { background-color: #334155 !important; }
+    .dark .bg-slate-100 { background-color: #16223a !important; }
+    .dark .bg-slate-800 { background-color: #0f172a !important; }
+    .dark h1, .dark h2, .dark h3, .dark h4 { color: #f1f5f9 !important; }
+    .dark strong { color: #e2e8f0 !important; }
+    .dark code:not([class*="language-"]) { background-color: #334155 !important; color: #e2e8f0 !important; }
+    .dark .text-slate-900 { color: #f1f5f9 !important; }
+    .dark .text-slate-800 { color: #e2e8f0 !important; }
+    .dark .text-slate-700 { color: #cbd5e1 !important; }
+    .dark .text-slate-600 { color: #94a3b8 !important; }
+    .dark .text-slate-500 { color: #64748b !important; }
+    .dark .toc-link { color: #64748b !important; border-color: #1e293b !important; }
+    .dark .toc-link:hover { color: #60a5fa !important; border-color: #3b82f6 !important; }
+    .dark .toc-link.active { color: #60a5fa !important; border-left-color: #60a5fa !important; background-color: #1e293b !important; }
+    .dark #toc-mobile { background-color: #1e293b !important; border-color: #334155 !important; }
+
+    .dark .bg-red-50 { background-color: #2a1215 !important; }
+    .dark .border-red-200 { border-color: #5c1d1d !important; }
+    .dark .text-red-900, .dark .text-red-800 { color: #fca5a5 !important; }
+    .dark .text-red-700 { color: #fca5a5 !important; }
+    .dark .text-red-600 { color: #f87171 !important; }
+    .dark .bg-amber-50 { background-color: #271506 !important; }
+    .dark .border-amber-200 { border-color: #6b3a0a !important; }
+    .dark .text-amber-900, .dark .text-amber-800 { color: #fcd34d !important; }
+    .dark .text-amber-700 { color: #fcd34d !important; }
+    .dark .bg-emerald-50 { background-color: #0a2118 !important; }
+    .dark .border-emerald-200 { border-color: #155e3e !important; }
+    .dark .text-emerald-900, .dark .text-emerald-800 { color: #6ee7b7 !important; }
+    .dark .text-emerald-700 { color: #6ee7b7 !important; }
+    .dark .bg-violet-50 { background-color: #1a0f2e !important; }
+    .dark .border-violet-200 { border-color: #4c1d95 !important; }
+    .dark .text-violet-900, .dark .text-violet-800 { color: #c4b5fd !important; }
+    .dark .text-violet-700 { color: #c4b5fd !important; }
+    .dark .bg-blue-50 { background-color: #0c1a33 !important; }
+    .dark .bg-blue-100 { background-color: #112244 !important; }
+    .dark .border-blue-200 { border-color: #1e4a8a !important; }
+    .dark .border-blue-300 { border-color: #1e4a8a !important; }
+    .dark .text-blue-900, .dark .text-blue-800 { color: #93c5fd !important; }
+    .dark .text-blue-700 { color: #93c5fd !important; }
+    .dark .text-blue-600 { color: #60a5fa !important; }
+    .dark .bg-sky-50 { background-color: #0c1a33 !important; }
+    .dark .border-sky-200 { border-color: #1e4a8a !important; }
+    .dark .text-sky-900, .dark .text-sky-800 { color: #93c5fd !important; }
+
+    @media print {
+      nav, header, #toc-mobile { display: none !important; }
+      main { margin-left: 0 !important; }
+      .section-animate { opacity: 1 !important; transform: none !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased">
+
+  <header class="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div>
+        <h1 class="text-lg font-bold text-slate-900 leading-tight">AI 211 — Chapters 1–3, Visualized</h1>
+        <p class="text-xs text-slate-500">Systems of Linear Equations · Matrices · Determinants — Larson handouts, AI 211</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="toggleTheme()" class="theme-toggle p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title="Toggle theme">
+          <svg id="icon-sun" class="w-5 h-5 text-amber-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+          </svg>
+          <svg id="icon-moon" class="w-5 h-5 text-slate-600 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+          </svg>
+        </button>
+        <button onclick="document.getElementById('toc-mobile').classList.toggle('hidden')"
+                class="lg:hidden p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+    <div id="toc-mobile" class="hidden fixed top-16 left-0 right-0 z-40 bg-white border-b border-slate-200 shadow-lg lg:hidden p-4 max-h-[70vh] overflow-y-auto">
+    <nav class="space-y-1">
+      <a href="#sec-story" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">The One Story of Chapters 1–3</a>
+      <a href="#sec-linear" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">1 · Linear Equations &amp; Solution Sets</a>
+      <a href="#sec-geometry" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">1 · One, None, or Infinitely Many</a>
+      <a href="#sec-gauss" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">1 · Row Operations, Live</a>
+      <a href="#sec-echelon" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">1 · Echelon Forms &amp; Homogeneous</a>
+      <a href="#sec-apps1" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">1 · Curve Fitting &amp; Networks</a>
+      <a href="#sec-matmul" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">2 · Matrix Multiplication, Live</a>
+      <a href="#sec-algebra" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">2 · The Algebra That Breaks</a>
+      <a href="#sec-inverse" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">2 · Inverses: [A | I] → [I | A⁻¹]</a>
+      <a href="#sec-elementary" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">2 · Elementary Matrices &amp; LU</a>
+      <a href="#sec-markov" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">2 · Markov Chains</a>
+      <a href="#sec-apps2" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">2 · Crypto, Leontief, Least Squares</a>
+      <a href="#sec-cofactor" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">3 · Determinants &amp; Cofactors</a>
+      <a href="#sec-detops" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">3 · Row Ops vs the Determinant</a>
+      <a href="#sec-detprops" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">3 · Properties, Adjoint &amp; Cramer</a>
+      <a href="#sec-checklist" onclick="document.getElementById('toc-mobile').classList.add('hidden')" class="block px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-100">Exam Checklist</a>
+    </nav>
+  </div>
+
+  <div class="max-w-7xl mx-auto pt-24 px-6 flex gap-10">
+    <aside class="hidden lg:block w-56 flex-shrink-0">
+      <nav class="sticky top-24 space-y-0.5 text-sm max-h-[calc(100vh-8rem)] overflow-y-auto" id="toc">
+        <a href="#sec-story" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">The One Story</a>
+        <p class="pl-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Ch 1 — Systems of Linear Equations</p>
+        <a href="#sec-linear" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Linear Equations &amp; Solutions</a>
+        <a href="#sec-geometry" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">One, None, or Infinitely Many</a>
+        <a href="#sec-gauss" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Row Operations, Live</a>
+        <a href="#sec-echelon" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Echelon Forms &amp; Homogeneous</a>
+        <a href="#sec-apps1" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Curve Fitting &amp; Networks</a>
+        <p class="pl-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Ch 2 — Matrices</p>
+        <a href="#sec-matmul" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Matrix Multiplication, Live</a>
+        <a href="#sec-algebra" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">The Algebra That Breaks</a>
+        <a href="#sec-inverse" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Inverses: [A | I] → [I | A⁻¹]</a>
+        <a href="#sec-elementary" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Elementary Matrices &amp; LU</a>
+        <a href="#sec-markov" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Markov Chains</a>
+        <a href="#sec-apps2" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Crypto, Leontief, Least Squares</a>
+        <p class="pl-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Ch 3 — Determinants</p>
+        <a href="#sec-cofactor" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Determinants &amp; Cofactors</a>
+        <a href="#sec-detops" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Row Ops vs the Determinant</a>
+        <a href="#sec-detprops" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Properties, Adjoint &amp; Cramer</a>
+        <p class="pl-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Wrap-up</p>
+        <a href="#sec-checklist" class="toc-link block pl-3 py-1.5 border-l-2 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-400 rounded-r-lg">Exam Checklist</a>
+      </nav>
+    </aside>
+
+    <main class="flex-1 min-w-0 pb-24">
+      <div class="mb-16 section-animate">
+        <h1 class="text-4xl font-extrabold text-slate-900 mb-4 leading-tight">Linear algebra's opening act: solve it, package it, test it with one number</h1>
+        <p class="text-lg text-slate-600 leading-relaxed max-w-2xl">
+          <strong>Chapter 1</strong> teaches the one algorithm that solves any linear system.
+          <strong>Chapter 2</strong> turns the bookkeeping into objects — matrices with their own algebra.
+          <strong>Chapter 3</strong> compresses an entire matrix into a single number that decides invertibility, uniqueness, even area.
+          Built from the three Larson chapter handouts (163 pages, ~320 slides, 136 worked examples); every claim cites its handout page like <span class="ts">Ch1 p.18</span>.
+        </p>
+      </div>
+      <!-- ═══════════ STORY ═══════════ -->
+      <section id="sec-story" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-blue-700 text-sm font-bold">1</span>
+          The One Story of Chapters 1–3
+        </h2>
+        <div class="space-y-6">
+          <div class="grid md:grid-cols-3 gap-4">
+            <div class="p-5 rounded-xl bg-white border-2 border-amber-200 shadow-sm">
+              <p class="text-xs font-bold uppercase tracking-wider text-amber-600 mb-1">Ch 1 · Systems <span class="ts">41 pp</span></p>
+              <p class="font-semibold text-slate-900 mb-2">Solve a_1x_1 + … + a_nx_n = b, many at once</p>
+              <p class="text-sm text-slate-600 leading-relaxed">Every linear system has exactly one, none, or infinitely many solutions — and one algorithm (Gaussian elimination) always finds out which <span class="ts">Ch1 p.10</span>.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border-2 border-blue-200 shadow-sm">
+              <p class="text-xs font-bold uppercase tracking-wider text-blue-600 mb-1">Ch 2 · Matrices <span class="ts">82 pp</span></p>
+              <p class="font-semibold text-slate-900 mb-2">The bookkeeping becomes an object: A</p>
+              <p class="text-sm text-slate-600 leading-relaxed">Matrices get their own +, scalar ×, and a strange multiplication built exactly so that a system is one equation: A<strong>x</strong> = <strong>b</strong> <span class="ts">Ch2 p.11</span>. Inverses turn solving into multiplying.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border-2 border-emerald-200 shadow-sm">
+              <p class="text-xs font-bold uppercase tracking-wider text-emerald-600 mb-1">Ch 3 · Determinants <span class="ts">40 pp</span></p>
+              <p class="font-semibold text-slate-900 mb-2">One number answers the big questions</p>
+              <p class="text-sm text-slate-600 leading-relaxed">det(A) ≠ 0 ⇔ A is invertible ⇔ A<strong>x</strong> = <strong>b</strong> has a unique solution <span class="ts">Ch3 p.23</span> — plus explicit formulas: the adjoint inverse and Cramer's rule.</p>
+            </div>
+          </div>
+          <div class="flex gap-4 p-5 rounded-xl bg-violet-50 border border-violet-200">
+            <div class="flex-shrink-0 text-violet-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg></div>
+            <div>
+              <p class="font-semibold text-violet-900 mb-1">Why AI 211 starts here</p>
+              <p class="text-violet-800 text-sm leading-relaxed">⚠ Outside the handouts: the course syllabus frames this as <em>Computational Linear Algebra for AI</em> — Ax = b, elimination/pivots, and matrix multiplication are the substrate for the six fundamental decompositions and for ML models (regression appears already in Ch2's least-squares section). The handouts are the rigorous base camp.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ CH1: LINEAR ═══════════ -->
+      <section id="sec-linear" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 text-amber-700 text-sm font-bold">1</span>
+          Linear equations, solutions, and parametric form
+        </h2>
+        <div class="space-y-6">
+          <div class="p-5 rounded-xl bg-blue-50 border border-blue-200">
+            <p class="font-semibold text-blue-900 mb-1">The definition everything builds on <span class="ts">Ch1 p.3</span></p>
+            <p class="text-blue-800 text-sm leading-relaxed">A <strong>linear equation in n variables</strong> has the form <span class="font-mono">a₁x₁ + a₂x₂ + a₃x₃ + … + aₙxₙ = b</span> — real <strong>coefficients</strong> aᵢ, real <strong>constant term</strong> b; a₁ is the <strong>leading coefficient</strong>, x₁ the <strong>leading variable</strong>.</p>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-5 rounded-xl bg-emerald-50 border border-emerald-200">
+              <p class="font-semibold text-emerald-900 mb-2">Linear ✓ <span class="ts">Ch1 p.3</span></p>
+              <ul class="space-y-1 text-sm text-emerald-800 font-mono">
+                <li>3x + 2y = 7</li>
+                <li>(1/2)x + y − πz = √2</li>
+                <li>(sin π)x₁ − 4x₂ = e²</li>
+              </ul>
+              <p class="mt-2 text-xs text-emerald-800">sin π and e² are <em>constants</em> — variables only ever appear to the first power, alone.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-red-50 border border-red-200">
+              <p class="font-semibold text-red-900 mb-2">Not linear ✗ <span class="ts">Ch1 p.3</span></p>
+              <ul class="space-y-1 text-sm text-red-800 font-mono">
+                <li>xy + z = 2 <span class="font-sans text-xs">(product of variables)</span></li>
+                <li>eˣ − 2y = 4 <span class="font-sans text-xs">(variable in an exponent)</span></li>
+                <li>sin x₁ + 2x₂ − 3x₃ = 0 <span class="font-sans text-xs">(variable inside a function)</span></li>
+              </ul>
+            </div>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed">A <strong>solution</strong> is a sequence s₁, …, sₙ satisfying the equation; the set of all of them is the <strong>solution set</strong>, described by a <strong>parametric representation</strong> <span class="ts">Ch1 p.4–5</span>. The handout's model: for <span class="font-mono">3x + 2y − z = 3</span>, choose y and z free, solve for x, then set y = s, z = t:</p>
+
+          <div class="my-4 p-5 bg-white rounded-xl border border-slate-200 shadow-sm">
+            <p class="font-mono text-center text-slate-800">x = 1 − (2/3)s + (1/3)t, &nbsp; y = s, &nbsp; z = t &nbsp;&nbsp;<span class="font-sans text-sm text-slate-500">s, t any real numbers</span></p>
+            <p class="mt-2 text-sm text-slate-600 text-center">Two particular solutions: (1, 0, 0) and (1, 1, 2) <span class="ts">Ch1 p.6</span>. One equation, a two-parameter family — a plane of solutions.</p>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed">Stack m of these and you have a <strong>system of m linear equations in n variables</strong>; a solution must satisfy <em>every</em> equation <span class="ts">Ch1 p.7</span>.</p>
+        </div>
+      </section>
+
+      <!-- ═══════════ CH1: GEOMETRY / TRICHOTOMY ═══════════ -->
+      <section id="sec-geometry" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 text-amber-700 text-sm font-bold">1</span>
+          Exactly one, none, or infinitely many — never anything else
+        </h2>
+        <div class="space-y-6">
+          <div class="p-5 rounded-xl bg-blue-50 border border-blue-200">
+            <p class="font-semibold text-blue-900 mb-1">The trichotomy <span class="ts">Ch1 p.10</span></p>
+            <p class="text-blue-800 text-sm leading-relaxed">For a system of linear equations, <strong>precisely one</strong> is true: exactly one solution (consistent) · infinitely many solutions (consistent) · no solution (<strong>inconsistent</strong>). A linear system can never have, say, exactly two solutions.</p>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed">The handout's Example 4 shows all three cases with two lines <span class="ts">Ch1 p.8–10</span>. Click each case — the geometry <em>is</em> the algebra:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <p class="text-sm font-medium text-slate-500">Figure 1.1, interactive — two equations in two variables</p>
+              <div class="flex items-center gap-1.5 p-1 rounded-lg bg-slate-100 border border-slate-200">
+                <button data-tri="a" class="tri-btn stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">a · intersecting</button>
+                <button data-tri="b" class="tri-btn stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">b · coincident</button>
+                <button data-tri="c" class="tri-btn stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">c · parallel</button>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-[1fr,1.2fr] gap-6 items-center">
+              <div id="tri-graph"></div>
+              <div id="tri-panel" class="space-y-3"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ CH1: GAUSS STEPPER ═══════════ -->
+      <section id="sec-gauss" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 text-amber-700 text-sm font-bold">1</span>
+          Row operations, live: Gaussian → Gauss-Jordan on one system
+        </h2>
+        <div class="space-y-6">
+          <div class="p-5 rounded-xl bg-blue-50 border border-blue-200">
+            <p class="font-semibold text-blue-900 mb-1">The only three moves you're allowed <span class="ts">Ch1 p.17</span></p>
+            <p class="text-blue-800 text-sm leading-relaxed"><strong>Elementary row operations:</strong> ① interchange two rows · ② multiply a row by a <em>nonzero</em> constant · ③ add a multiple of a row to another row. Each is reversible, so every step preserves the solution set.</p>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed">The handout runs Example 3 with the linear system and its <strong>augmented matrix</strong> side by side <span class="ts">Ch1 p.18–19</span>, then Example 7 pushes the same matrix all the way to <em>reduced</em> row-echelon form <span class="ts">Ch1 p.24–25</span>. Step through the whole journey:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <p class="text-sm font-medium text-slate-500">x − 2y + 3z = 9 · −x + 3y = −4 · 2x − 5y + 5z = 17</p>
+              <div class="flex items-center gap-2">
+                <button id="ga-prev" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">← Back</button>
+                <button id="ga-step" class="stepbtn px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold shadow-sm">Step ▸</button>
+                <button id="ga-reset" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">Reset</button>
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center justify-center gap-6">
+              <div id="ga-matrix"></div>
+              <div id="ga-system" class="font-mono text-sm text-slate-700 leading-relaxed"></div>
+            </div>
+            <p id="ga-caption" class="mt-4 text-sm text-slate-600 text-center font-medium min-h-[2.5rem]"></p>
+            <div class="mt-2 flex justify-center"><div id="ga-phase" class="text-xs font-bold uppercase tracking-wider"></div></div>
+          </div>
+
+          <div class="flex gap-4 p-5 rounded-xl bg-amber-50 border border-amber-200">
+            <div class="flex-shrink-0 text-amber-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg></div>
+            <div>
+              <p class="font-semibold text-amber-900 mb-1">Two names, one algorithm family</p>
+              <p class="text-amber-800 text-sm leading-relaxed"><strong>Gaussian elimination</strong> stops at row-echelon form and finishes by back-substitution <span class="ts">Ch1 p.20</span>; <strong>Gauss-Jordan elimination</strong> keeps going to <em>reduced</em> row-echelon form, where the answer can be read straight off <span class="ts">Ch1 p.23</span>. Same three moves either way.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <!-- ═══════════ CH1: ECHELON + HOMOGENEOUS ═══════════ -->
+      <section id="sec-echelon" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 text-amber-700 text-sm font-bold">1</span>
+          Echelon forms, the 4×4 workout, and free lunches (homogeneous systems)
+        </h2>
+        <div class="space-y-6">
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Row-echelon form (REF) <span class="ts">Ch1 p.19</span></p>
+              <ol class="list-decimal ml-5 space-y-1 text-sm text-slate-600">
+                <li>All-zero rows at the bottom</li>
+                <li>First nonzero entry of each row is a <strong>leading 1</strong></li>
+                <li>Each leading 1 sits <em>left</em> of the leading 1 below it — a staircase</li>
+              </ol>
+              <div class="mt-3 font-mono text-sm text-center text-slate-700">
+                <span class="text-blue-600 font-bold">1</span> 2 −1 0 | 2<br>0 <span class="text-blue-600 font-bold">1</span> 1 −2 | −3<br>0 0 <span class="text-blue-600 font-bold">1</span> −1 | −2<br>0 0 0 <span class="text-blue-600 font-bold">1</span> | 3
+              </div>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Reduced REF adds one rule <span class="ts">Ch1 p.20</span></p>
+              <p class="text-sm text-slate-600 mb-3">Every leading-1 column has zeros <strong>above and below</strong> the leading 1 — so each variable stands alone.</p>
+              <div class="font-mono text-sm text-center text-slate-700">
+                <span class="text-blue-600 font-bold">1</span> 0 0 | 1<br>0 <span class="text-blue-600 font-bold">1</span> 0 | −1<br>0 0 <span class="text-blue-600 font-bold">1</span> | 2
+              </div>
+              <p class="mt-3 text-xs text-slate-500">Gauss-Jordan's endpoint: the solution is just sitting there <span class="ts">Ch1 p.25</span>.</p>
+            </div>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed">The full-size workout is Example 5 <span class="ts">Ch1 p.21–22</span> — four equations, four variables, and every kind of move: a row <em>interchange</em> to get a leading 1 (<span class="font-mono text-sm">R₁ ↔ R₂</span>), three <em>add-a-multiple</em> clears, then two <em>rescales</em> (<span class="font-mono text-sm">⅓R₃, −1/13·R₄</span>) to finish the staircase. Back-substitution unwinds from the bottom: x₄ = 3 → x₃ = 1 → x₂ = 2 → x₁ = −1.</p>
+
+          <div class="flex gap-4 p-5 rounded-xl bg-emerald-50 border border-emerald-200">
+            <div class="flex-shrink-0 text-emerald-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+            <div>
+              <p class="font-semibold text-emerald-900 mb-1">Homogeneous systems never say no — Theorem 1.1 <span class="ts">Ch1 p.28</span></p>
+              <p class="text-emerald-800 text-sm leading-relaxed">All constant terms zero ⇒ x₁ = … = xₙ = 0 (the <strong>trivial solution</strong>) always works, so every homogeneous system is consistent <span class="ts">Ch1 p.26</span>. And with <strong>fewer equations than variables, infinitely many</strong> solutions are guaranteed — the handout's Example 9 (2 equations, 3 variables) reduces to x₁ = −2t, x₂ = t, x₃ = t <span class="ts">Ch1 p.27</span>.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ CH1: APPLICATIONS ═══════════ -->
+      <section id="sec-apps1" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 text-amber-700 text-sm font-bold">1</span>
+          What systems are for: curve fitting and network flow
+        </h2>
+        <div class="space-y-6">
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Polynomial curve fitting <span class="ts">Ch1 p.31</span></p>
+              <p class="text-sm text-slate-600 leading-relaxed mb-3">n points with distinct x's ⇒ exactly one polynomial of degree ≤ n−1 through them. Each point becomes one linear equation in the coefficients a₀…aₙ₋₁ — fitting a curve <em>is</em> solving a system.</p>
+              <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 text-sm font-mono text-slate-700">
+                (1,4), (2,0), (3,12) →<br>
+                a₀ + a₁ + a₂ = 4<br>
+                a₀ + 2a₁ + 4a₂ = 0<br>
+                a₀ + 3a₁ + 9a₂ = 12<br>
+                <span class="text-emerald-700 font-bold">⇒ p(x) = 24 − 28x + 8x²</span>
+              </div>
+              <p class="mt-2 text-xs text-slate-500">Example 1 <span class="ts">Ch1 p.32</span>. Example 4 fits Mercury, Venus, and Earth, and the fitted polynomial then <em>predicts</em> Mars' period as ≈ 1.918 years — compared against the actual 1.881 years in the table <span class="ts">Ch1 p.33–35</span>.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Network analysis <span class="ts">Ch1 p.36</span></p>
+              <p class="text-sm text-slate-600 leading-relaxed mb-3">Model rule: at every junction, <strong>flow in = flow out</strong>. Each junction contributes one linear equation in the branch flows x₁…x₅ — traffic, economics, and electrical engineering all reduce to systems <span class="ts">Ch1 p.36</span>. For circuits, Kirchhoff's two laws supply the equations — current in = current out at each junction, and around any closed path the ΣIR drops equal the total voltage <span class="ts">Ch1 p.38</span>; Example 6's three-equation circuit solves to I₁ = 1, I₂ = 2, I₃ = 1 amps <span class="ts">Ch1 p.38–41</span>.</p>
+              <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 text-center">
+                <svg viewBox="0 0 240 120" class="w-full max-w-[240px] mx-auto"><circle cx="40" cy="25" r="10" fill="none" stroke="currentColor" class="text-slate-400"/><circle cx="200" cy="25" r="10" fill="none" stroke="currentColor" class="text-slate-400"/><circle cx="120" cy="60" r="10" fill="none" stroke="currentColor" class="text-slate-400"/><circle cx="40" cy="100" r="10" fill="none" stroke="currentColor" class="text-slate-400"/><circle cx="200" cy="100" r="10" fill="none" stroke="currentColor" class="text-slate-400"/><line x1="190" y1="25" x2="50" y2="25" stroke="currentColor" class="text-slate-400" marker-end=""/><line x1="40" y1="35" x2="40" y2="90" stroke="currentColor" class="text-slate-400"/><line x1="48" y1="31" x2="111" y2="55" stroke="currentColor" class="text-slate-400"/><line x1="192" y1="31" x2="129" y2="55" stroke="currentColor" class="text-slate-400"/><line x1="200" y1="90" x2="200" y2="35" stroke="currentColor" class="text-slate-400"/><line x1="128" y1="66" x2="45" y2="94" stroke="currentColor" class="text-slate-400"/><line x1="112" y1="66" x2="195" y2="94" stroke="currentColor" class="text-slate-400"/><line x1="50" y1="100" x2="190" y2="100" stroke="currentColor" class="text-slate-400"/><text x="120" y="18" text-anchor="middle" font-size="10" class="fill-current text-slate-500">← 20</text><text x="30" y="65" font-size="10" class="fill-current text-slate-500">x₁</text><text x="70" y="48" font-size="10" class="fill-current text-slate-500">x₂</text><text x="162" y="48" font-size="10" class="fill-current text-slate-500">x₃</text><text x="206" y="65" font-size="10" class="fill-current text-slate-500">x₄</text><text x="120" y="115" text-anchor="middle" font-size="10" class="fill-current text-slate-500">x₅</text></svg>
+                <p class="text-xs text-slate-500 mt-1">Figure 1.6's five-junction network <span class="ts">Ch1 p.36</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ CH2: MATMUL ═══════════ -->
+      <section id="sec-matmul" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-blue-700 text-sm font-bold">2</span>
+          Matrix multiplication, one entry at a time
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">Addition and scalar multiplication are entrywise and boring — the interesting one is the product. <strong>c<sub>ij</sub> = (row i of A) · (column j of B)</strong>: multiply corresponding entries, add <span class="ts">Ch2 p.8</span>. Sizes must chain: (m×n)(n×p) = m×p. Step through the handout's Example 4:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <p class="text-sm font-medium text-slate-500">A (3×2) · B (2×2) = AB (3×2) <span class="ts">Ch2 p.8–10</span></p>
+              <div class="flex items-center gap-2">
+                <button id="mu-prev" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">← Back</button>
+                <button id="mu-step" class="stepbtn px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold shadow-sm">Step ▸</button>
+                <button id="mu-reset" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">Reset</button>
+              </div>
+            </div>
+            <div id="mu-stage" class="flex flex-wrap items-center justify-center gap-4"></div>
+            <p id="mu-caption" class="mt-4 text-sm text-slate-600 text-center font-medium min-h-[2rem]"></p>
+          </div>
+
+          <div class="flex gap-4 p-5 rounded-xl bg-violet-50 border border-violet-200">
+            <div class="flex-shrink-0 text-violet-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg></div>
+            <div>
+              <p class="font-semibold text-violet-900 mb-1">Why this weird rule? Because it makes systems collapse into A x = b</p>
+              <p class="text-violet-800 text-sm leading-relaxed">A whole linear system is <em>one</em> matrix equation A<strong>x</strong> = <strong>b</strong> <span class="ts">Ch2 p.11</span> — and A<strong>x</strong> is exactly a <strong>linear combination of A's columns</strong> with weights x₁…xₙ <span class="ts">Ch2 p.15</span>. That column view (Example 7 solves a system by finding the right column weights <span class="ts">Ch2 p.16–17</span>) is the doorway to AI 211's A = CR and column-space story.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ CH2: ALGEBRA ═══════════ -->
+      <section id="sec-algebra" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-blue-700 text-sm font-bold">2</span>
+          The algebra of matrices — what carries over, what breaks
+        </h2>
+        <div class="space-y-6">
+          <div class="my-4 p-6 bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead><tr class="text-left text-slate-500 border-b border-slate-200"><th class="py-2 pr-4 font-semibold">Property</th><th class="py-2 pr-4 font-semibold">Status</th><th class="py-2 font-semibold">Where</th></tr></thead>
+              <tbody class="text-slate-700">
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4">A + B = B + A; (A+B)+C = A+(B+C); distributive laws</td><td class="pr-4 text-emerald-600 font-bold">holds</td><td class="ts">Ch2 p.19–20 · Thm 2.1</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4">A + O = A; A + (−A) = O; cA = O ⇒ c = 0 or A = O</td><td class="pr-4 text-emerald-600 font-bold">holds</td><td class="ts">Ch2 p.21 · Thm 2.2</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4">A(BC) = (AB)C; A(B+C) = AB + AC; (A+B)C = AC + BC</td><td class="pr-4 text-emerald-600 font-bold">holds</td><td class="ts">Ch2 p.23 · Thm 2.3</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4">AIₙ = A and IₘA = A</td><td class="pr-4 text-emerald-600 font-bold">holds</td><td class="ts">Ch2 p.25 · Thm 2.4</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4 font-semibold">AB = BA</td><td class="pr-4 text-red-600 font-bold">BREAKS</td><td class="text-xs">⚠ true in general, but the deck states no counterexample</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4 font-semibold">AC = BC ⇒ A = B (cancellation)</td><td class="pr-4 text-red-600 font-bold">BREAKS in general</td><td class="ts">restored when C is invertible — Thm 2.10, Ch2 p.39</td></tr>
+                <tr><td class="py-2 pr-4">(Aᵀ)ᵀ = A; (A+B)ᵀ = Aᵀ+Bᵀ; (cA)ᵀ = cAᵀ; <strong>(AB)ᵀ = BᵀAᵀ</strong></td><td class="pr-4 text-amber-600 font-bold">holds — note the flip</td><td class="ts">Ch2 p.28 · Thm 2.6</td></tr>
+              </tbody>
+            </table>
+            <p class="mt-3 text-sm text-slate-600">Matrix algebra keeps real-number algebra's <em>additive</em> world intact, but multiplication is order-sensitive: the transpose (and later the inverse) of a product <strong>reverses the order</strong>. Solving matrix equations still works like algebra — the handout solves 3X + A = B by X = ⅓(B − A) = [[−4/3, 2], [2/3, −2/3]] <span class="ts">Ch2 p.21–22</span>.</p>
+          </div>
+        </div>
+      </section>
+      <!-- ═══════════ CH2: INVERSE ═══════════ -->
+      <section id="sec-inverse" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-blue-700 text-sm font-bold">2</span>
+          Inverses: adjoin the identity and grind
+        </h2>
+        <div class="space-y-6">
+          <div class="p-5 rounded-xl bg-blue-50 border border-blue-200">
+            <p class="font-semibold text-blue-900 mb-1">Definition + uniqueness <span class="ts">Ch2 p.31</span></p>
+            <p class="text-blue-800 text-sm leading-relaxed">A (n×n) is <strong>invertible / nonsingular</strong> when some B satisfies AB = BA = Iₙ; otherwise <strong>noninvertible / singular</strong>. The inverse is <strong>unique</strong> (Theorem 2.7), written A⁻¹.</p>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed">The algorithm <span class="ts">Ch2 p.33</span>: adjoin I to get <span class="font-mono">[A | I]</span>, row-reduce the left half to I with the usual three moves — the right half silently accumulates every operation and becomes A⁻¹. If the left half can't reach I, A is singular. Step the handout's Example 3:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <p class="text-sm font-medium text-slate-500">[A | I] → [I | A⁻¹] for A = [[1,−1,0],[1,0,−1],[−6,2,3]] <span class="ts">Ch2 p.34–35</span></p>
+              <div class="flex items-center gap-2">
+                <button id="inv-prev" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">← Back</button>
+                <button id="inv-step" class="stepbtn px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold shadow-sm">Step ▸</button>
+                <button id="inv-reset" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">Reset</button>
+              </div>
+            </div>
+            <div id="inv-stage" class="flex justify-center"></div>
+            <p id="inv-caption" class="mt-4 text-sm text-slate-600 text-center font-medium min-h-[2rem]"></p>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">The 2×2 shortcut <span class="ts">Ch2 p.36</span></p>
+              <p class="text-sm text-slate-600 leading-relaxed">A = [[a,b],[c,d]] is invertible ⇔ <span class="font-mono">ad − bc ≠ 0</span>, and then <span class="font-mono">A⁻¹ = 1/(ad−bc) · [[d,−b],[−c,a]]</span> — swap the diagonal, negate the off-diagonal, divide. (That ad − bc is Chapter 3's determinant making an early cameo.)</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Why inverses matter for systems</p>
+              <p class="text-sm text-slate-600 leading-relaxed">If A is invertible, A<strong>x</strong> = <strong>b</strong> has the unique solution <span class="font-mono">x = A⁻¹b</span> — solving becomes multiplying <span class="ts">Ch2 p.40</span>. Theorem 2.8's identities <span class="ts">Ch2 p.37</span>: <span class="font-mono">(A⁻¹)⁻¹ = A · (Aᵏ)⁻¹ = (A⁻¹)ᵏ · (cA)⁻¹ = (1/c)A⁻¹ · (Aᵀ)⁻¹ = (A⁻¹)ᵀ</span> — and, like the transpose, the inverse of a product reverses order: (AB)⁻¹ = B⁻¹A⁻¹.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ CH2: ELEMENTARY + LU ═══════════ -->
+      <section id="sec-elementary" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-blue-700 text-sm font-bold">2</span>
+          Elementary matrices: row operations become multiplication
+        </h2>
+        <div class="space-y-6">
+          <p class="text-slate-600 leading-relaxed">An <strong>elementary matrix</strong> is I after a single row operation <span class="ts">Ch2 p.45</span> — and Theorem 2.12 says performing that operation on A is the same as computing <strong>EA</strong>. Chapter 1's hand moves become Chapter 2 objects. Every E is invertible (Theorem 2.13 <span class="ts">Ch2 p.48</span>), which powers the chapter's keystone:</p>
+
+          <div class="p-5 rounded-xl bg-blue-50 border border-blue-200">
+            <p class="font-semibold text-blue-900 mb-1">Theorem 2.15 — the equivalence ladder <span class="ts">Ch2 p.50</span></p>
+            <p class="text-blue-800 text-sm leading-relaxed">For an n×n matrix A, these are equivalent: ① A is invertible · ② A<strong>x</strong> = <strong>b</strong> has a unique solution for every <strong>b</strong> · ③ A<strong>x</strong> = O has only the trivial solution · ④ A is row-equivalent to Iₙ · ⑤ A is a product of elementary matrices. (Chapter 3 will bolt on ⑥ det(A) ≠ 0.)</p>
+          </div>
+
+          <div class="my-4 p-6 bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <p class="mb-4 text-sm font-medium text-slate-500">Example 4: factoring A = [[−1,−2],[3,8]] into elementary matrices <span class="ts">Ch2 p.49–50</span></p>
+            <table class="w-full text-sm font-mono text-center">
+              <thead><tr class="text-slate-500 border-b border-slate-200 font-sans"><th class="py-2 font-semibold">Matrix</th><th class="py-2 font-semibold">Row operation</th><th class="py-2 font-semibold">Elementary matrix</th></tr></thead>
+              <tbody class="text-slate-700">
+                <tr class="border-b border-slate-100"><td class="py-1.5">[[1,2],[3,8]]</td><td>(−1)R₁ → R₁</td><td>E₁ = [[−1,0],[0,1]]</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-1.5">[[1,2],[0,2]]</td><td>R₂ + (−3)R₁ → R₂</td><td>E₂ = [[1,0],[−3,1]]</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-1.5">[[1,2],[0,1]]</td><td>(1/2)R₂ → R₂</td><td>E₃ = [[1,0],[0,1/2]]</td></tr>
+                <tr><td class="py-1.5">[[1,0],[0,1]]</td><td>R₁ + (−2)R₂ → R₁</td><td>E₄ = [[1,−2],[0,1]]</td></tr>
+              </tbody>
+            </table>
+            <p class="mt-3 text-sm text-slate-600">E₄E₃E₂E₁A = I, so <span class="font-mono">A = E₁⁻¹E₂⁻¹E₃⁻¹E₄⁻¹</span> — invertible ⇔ buildable from elementary pieces.</p>
+          </div>
+
+          <div class="flex gap-4 p-5 rounded-xl bg-violet-50 border border-violet-200">
+            <div class="flex-shrink-0 text-violet-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg></div>
+            <div>
+              <p class="font-semibold text-violet-900 mb-1">LU-factorization — your first "fundamental decomposition" <span class="ts">Ch2 p.51</span></p>
+              <p class="text-violet-800 text-sm leading-relaxed">A = LU (lower × upper triangular). The handout builds it by row-reducing A to U while collecting the inverse elementary matrices into L: for A = [[1,−3,0],[0,1,3],[2,−10,2]], two operations (R₃−2R₁, R₃+4R₂) give U with <span class="font-mono">L = [[1,0,0],[0,1,0],[2,−4,1]]</span> <span class="ts">Ch2 p.52</span>. Then Ax = b splits into two easy triangular solves: Ly = b, Ux = y <span class="ts">Ch2 p.53–55</span>. ⚠ Outside the handout: this is the first of AI 211's "six fundamental decompositions."</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ CH2: MARKOV ═══════════ -->
+      <section id="sec-markov" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-blue-700 text-sm font-bold">2</span>
+          Markov chains: matrix powers as time machines
+        </h2>
+        <div class="space-y-6">
+          <div class="grid md:grid-cols-3 gap-4">
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Stochastic matrix <span class="ts">Ch2 p.58</span></p>
+              <p class="text-sm text-slate-600 leading-relaxed">P holds transition probabilities p<sub>ij</sub> (from state j <em>to</em> state i): every entry in [0,1] and <strong>every column sums to 1</strong>. Columns = "From", rows = "To".</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Time evolution <span class="ts">Ch2 p.59</span></p>
+              <p class="text-sm text-slate-600 leading-relaxed">The nth state is a matrix power acting on the start: <span class="font-mono">Xₙ = PⁿX₀</span>. The handout's subscriber model runs 15 years ahead: X₁₅ ≈ (0.3333, 0.4756, 0.1911) <span class="ts">Ch2 p.62</span>.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Steady state <span class="ts">Ch2 p.64</span></p>
+              <p class="text-sm text-slate-600 leading-relaxed">P is <strong>regular</strong> when some power Pᵏ has all-positive entries — then PⁿX₀ approaches a unique <strong>steady state X̄</strong> with PX̄ = X̄, found by solving that system <em>together with</em> x₁ + x₂ + … + xₙ = 1 (Ch1's elimination returns, on a nonhomogeneous system) <span class="ts">Ch2 p.65–66</span>.</p>
+            </div>
+          </div>
+          <p class="text-slate-600 leading-relaxed">Regularity is checkable: [[0.5,1],[0.5,0]] is regular because P² = [[0.75,0.5],[0.25,0.5]] is all-positive; a matrix whose every power keeps zeros in a column is not <span class="ts">Ch2 p.63–64</span>. <strong>Absorbing chains</strong> (a state you never leave) get their own steady-state treatment in Example 7 <span class="ts">Ch2 p.68–69</span>. ⚠ Outside the handout: PX̄ = X̄ says the steady state is an eigenvector of P with eigenvalue 1 — Chapter 7 foreshadowed.</p>
+        </div>
+      </section>
+
+      <!-- ═══════════ CH2: APPS ═══════════ -->
+      <section id="sec-apps2" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-blue-700 text-sm font-bold">2</span>
+          Three industries of matrix arithmetic: crypto, economies, regression
+        </h2>
+        <div class="space-y-6">
+          <div class="grid md:grid-cols-3 gap-4">
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Cryptography <span class="ts">Ch2 p.72</span></p>
+              <p class="text-sm text-slate-600 leading-relaxed">Letters → numbers (0 = space, 1 = A, … 26 = Z), grouped into row matrices, encoded by multiplying with an invertible A. Decoding = multiplying by A⁻¹ — the handout's Example 3 recovers <span class="font-mono">MEET ME MONDAY</span> <span class="ts">Ch2 p.76</span>. Invertibility isn't abstract: it's whether the message comes back.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Leontief input-output <span class="ts">Ch2 p.77</span></p>
+              <p class="text-sm text-slate-600 leading-relaxed">d<sub>ij</sub> = output industry j needs from industry i per unit produced. With external demand E, the economy balances at X = DX + E ⇒ <span class="font-mono">(I − D)X = E</span> — a linear system whose solution is the production plan <span class="ts">Ch2 p.77–78</span>.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Least squares regression <span class="ts">Ch2 p.79</span></p>
+              <p class="text-sm text-slate-600 leading-relaxed">The best-fit line minimizes summed squared error; in matrix form the coefficients are <span class="font-mono">A = (XᵀX)⁻¹XᵀY</span> <span class="ts">Ch2 p.80</span>. Transpose, product, inverse — every tool of the chapter in one formula. ⚠ Outside the handout: this is literally the ML "normal equation."</p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <!-- ═══════════ CH3: COFACTOR ═══════════ -->
+      <section id="sec-cofactor" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 text-sm font-bold">3</span>
+          The determinant: minors, cofactors, and where to expand
+        </h2>
+        <div class="space-y-6">
+          <div class="grid md:grid-cols-3 gap-4">
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">2×2 base case <span class="ts">Ch3 p.3</span></p>
+              <p class="font-mono text-sm text-slate-700 text-center mb-2">det [[a₁₁,a₁₂],[a₂₁,a₂₂]]<br>= a₁₁a₂₂ − a₂₁a₁₂</p>
+              <p class="text-xs text-slate-500 text-center">|[[2,−3],[1,2]]| = 7 · |[[2,1],[4,2]]| = 0 · |[[0,3/2],[2,4]]| = −3 <span class="ts">Ch3 p.3</span></p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Minor &amp; cofactor <span class="ts">Ch3 p.4</span></p>
+              <p class="text-sm text-slate-600 leading-relaxed"><strong>M<sub>ij</sub></strong> = determinant after deleting row i and column j. <strong>C<sub>ij</sub> = (−1)<sup>i+j</sup>M<sub>ij</sub></strong> — the checkerboard of signs.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Expansion — any row or column <span class="ts">Ch3 p.7</span></p>
+              <p class="text-sm text-slate-600 leading-relaxed">Theorem 3.1: det(A) = Σ a<sub>ij</sub>C<sub>ij</sub> along <em>any</em> row or column — so expand along whichever has the most zeros.</p>
+            </div>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed">Click any entry of the handout's Example 2 matrix — watch its row and column vanish, and its minor and cofactor appear <span class="ts">Ch3 p.5</span>:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <p class="text-sm font-medium text-slate-500">Minor/cofactor explorer — A = [[0,2,1],[3,−1,2],[4,0,1]]</p>
+              <p class="text-sm font-medium text-slate-500">click an entry</p>
+            </div>
+            <div class="flex flex-wrap items-center justify-center gap-8">
+              <div id="cf-matrix"></div>
+              <div id="cf-panel" class="min-w-[16rem]"></div>
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="flex gap-4 p-5 rounded-xl bg-amber-50 border border-amber-200">
+              <div class="flex-shrink-0 text-amber-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg></div>
+              <div>
+                <p class="font-semibold text-amber-900 mb-1">The zero-hunting strategy <span class="ts">Ch3 p.7–8</span></p>
+                <p class="text-amber-800 text-sm leading-relaxed">Example 4's 4×4 has three zeros in column 3 → expand there: |A| = 3·C₁₃ + 0 + 0 + 0. One 3×3 cofactor later (itself expanded along a zero-bearing row), C₁₃ = 13 and <strong>|A| = 3(13) = 39</strong>.</p>
+              </div>
+            </div>
+            <div class="flex gap-4 p-5 rounded-xl bg-emerald-50 border border-emerald-200">
+              <div class="flex-shrink-0 text-emerald-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+              <div>
+                <p class="font-semibold text-emerald-900 mb-1">Triangular freebie — Theorem 3.2 <span class="ts">Ch3 p.10</span></p>
+                <p class="text-emerald-800 text-sm leading-relaxed">Triangular matrix ⇒ det = product of the diagonal: |[[2,0,0,0],[4,−2,0,0],[−5,6,1,0],[1,5,3,3]]| = 2(−2)(1)(3) = <strong>−12</strong>. This is why the next section reduces to triangular form.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ CH3: DET vs ROW OPS ═══════════ -->
+      <section id="sec-detops" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 text-sm font-bold">3</span>
+          Row operations vs the determinant — three moves, three price tags
+        </h2>
+        <div class="space-y-6">
+          <div class="my-4 p-6 bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <p class="mb-4 text-sm font-medium text-slate-500">Theorem 3.3 <span class="ts">Ch3 p.13</span> — compare with Ch1, where all three moves were "free"</p>
+            <table class="w-full text-sm">
+              <thead><tr class="text-left text-slate-500 border-b border-slate-200"><th class="py-2 pr-4 font-semibold">Row operation</th><th class="py-2 pr-4 font-semibold">Effect on det</th><th class="py-2 font-semibold">Mnemonic</th></tr></thead>
+              <tbody class="text-slate-700">
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4">Interchange two rows</td><td class="pr-4 font-mono text-red-600 font-bold">det(B) = −det(A)</td><td>swap = sign flip</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4">Add a multiple of one row to another</td><td class="pr-4 font-mono text-emerald-600 font-bold">det(B) = det(A)</td><td>the workhorse is free</td></tr>
+                <tr><td class="py-2 pr-4">Multiply a row by c ≠ 0</td><td class="pr-4 font-mono text-amber-600 font-bold">det(B) = c·det(A)</td><td>factor it back out</td></tr>
+              </tbody>
+            </table>
+            <p class="mt-3 text-sm text-slate-600">The deck then defines elementary <em>column</em> operations and uses one in Example 3 to produce a zero determinant <span class="ts">Ch3 p.15–16</span>; the same three price tags apply column-wise (⚠ stated as a theorem only in the textbook, not in the deck).</p>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed">Strategy: row-reduce toward triangular form, <em>keeping the receipts</em>. Step the handout's Example 2 <span class="ts">Ch3 p.13–14</span>:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <p class="text-sm font-medium text-slate-500">|A| for A = [[0,−7,14],[1,2,−2],[0,3,−8]]</p>
+              <div class="flex items-center gap-2">
+                <button id="dt-prev" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">← Back</button>
+                <button id="dt-step" class="stepbtn px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold shadow-sm">Step ▸</button>
+                <button id="dt-reset" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">Reset</button>
+              </div>
+            </div>
+            <div id="dt-stage" class="flex flex-wrap items-center justify-center gap-4"></div>
+            <p id="dt-caption" class="mt-4 text-sm text-slate-600 text-center font-medium min-h-[2rem]"></p>
+          </div>
+
+          <div class="flex gap-4 p-5 rounded-xl bg-red-50 border border-red-200">
+            <div class="flex-shrink-0 text-red-700 mt-0.5"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></div>
+            <div>
+              <p class="font-semibold text-red-900 mb-1">Instant zeros — Theorem 3.4 <span class="ts">Ch3 p.17</span></p>
+              <p class="text-red-800 text-sm leading-relaxed">det(A) = 0 whenever: an entire row/column is zero · two rows/columns are equal · one row/column is a multiple of another. Example 4 spots it mid-reduction: after R₂ − 2R₁, rows 2 and 3 are multiples ⇒ |A| = 0, stop <span class="ts">Ch3 p.17</span>.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ CH3: PROPERTIES + CRAMER ═══════════ -->
+      <section id="sec-detprops" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 text-sm font-bold">3</span>
+          What the one number knows: products, inverses, Cramer, area
+        </h2>
+        <div class="space-y-6">
+          <div class="my-4 p-6 bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead><tr class="text-left text-slate-500 border-b border-slate-200"><th class="py-2 pr-4 font-semibold">Property</th><th class="py-2 pr-4 font-semibold">Statement</th><th class="py-2 font-semibold">Handout witness</th></tr></thead>
+              <tbody class="text-slate-700">
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4 font-medium">Product (Thm 3.5)</td><td class="pr-4 font-mono">det(AB) = det(A)·det(B)</td><td><span class="ts">Ch3 p.21</span> — |A|=−7, |B|=11, |AB|=−77 <span class="ts">Ch3 p.20</span></td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4 font-medium">Scalar (Thm 3.6)</td><td class="pr-4 font-mono">det(cA) = cⁿ·det(A)</td><td><span class="ts">Ch3 p.21</span> — |10A| = 10³·5 = 5000</td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4 font-medium">Invertibility (Thm 3.7)</td><td class="pr-4 font-mono">A invertible ⇔ det(A) ≠ 0</td><td><span class="ts">Ch3 p.22</span> — completes Ch2's ladder as condition ⑥ <span class="ts">Ch3 p.23</span></td></tr>
+                <tr class="border-b border-slate-100"><td class="py-2 pr-4 font-medium">Inverse (Thm 3.8)</td><td class="pr-4 font-mono">det(A⁻¹) = 1/det(A)</td><td><span class="ts">Ch3 p.22</span> — |A|=4 ⇒ |A⁻¹|=1/4 <span class="ts">Ch3 p.23</span></td></tr>
+                <tr><td class="py-2 pr-4 font-medium">Transpose (Thm 3.9)</td><td class="pr-4 font-mono">det(Aᵀ) = det(A)</td><td><span class="ts">Ch3 p.24</span> — both expansions give −6 <span class="ts">Ch3 p.25</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">The adjoint inverse <span class="ts">Ch3 p.28–30</span></p>
+              <p class="text-sm text-slate-600 leading-relaxed mb-2">adj(A) = <em>transpose</em> of the matrix of cofactors; Theorem 3.10: <span class="font-mono">A⁻¹ = adj(A)/det(A)</span>. The handout's A = [[−1,3,2],[0,−2,1],[1,0,−2]] has adj(A) = [[4,6,7],[1,0,1],[2,3,2]], det = 3 ⇒ A⁻¹ = (1/3)·adj(A) <span class="ts">Ch3 p.31</span>.</p>
+              <p class="text-xs text-slate-500">An explicit formula — elegant for theory, expensive next to [A|I] for computation.</p>
+            </div>
+            <div class="p-5 rounded-xl bg-white border border-slate-200 shadow-sm">
+              <p class="font-semibold text-slate-900 mb-2">Geometry from determinants <span class="ts">Ch3 p.34</span></p>
+              <p class="text-sm text-slate-600 leading-relaxed">Triangle with vertices (x₁,y₁), (x₂,y₂), (x₃,y₃): <span class="font-mono">Area = ±½·det [[x₁,y₁,1],[x₂,y₂,1],[x₃,y₃,1]]</span> (sign chosen positive). Setting that det to zero gives collinearity tests and the two-point line equation <span class="ts">Ch3 p.34–36</span>; the 3D versions: tetrahedron volume = ±(1/6)·det of the 4×4 vertex matrix (Example 7 → 12 cubic units) <span class="ts">Ch3 p.36–37</span>, det = 0 as a coplanarity test, and the three-point plane form <span class="ts">Ch3 p.38</span>.</p>
+            </div>
+          </div>
+
+          <p class="text-slate-600 leading-relaxed"><strong>Cramer's rule</strong> (Theorem 3.11 <span class="ts">Ch3 p.32</span>): when det(A) ≠ 0, each variable is a ratio of determinants — xᵢ = det(Aᵢ)/det(A), where Aᵢ swaps column i for the constants column. Watch it solve the handout's Example 4 for x:</p>
+
+          <div class="my-8 p-6 bg-white rounded-xl border border-slate-200 shadow-sm viz-container">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <p class="text-sm font-medium text-slate-500">−x + 2y − 3z = 1 · 2x + z = 0 · 3x − 4y + 4z = 2 <span class="ts">Ch3 p.32–33</span></p>
+              <div class="flex items-center gap-2">
+                <button id="cr-prev" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">← Back</button>
+                <button id="cr-step" class="stepbtn px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-semibold shadow-sm">Step ▸</button>
+                <button id="cr-reset" class="stepbtn px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium border border-slate-200">Reset</button>
+              </div>
+            </div>
+            <div id="cr-stage" class="flex flex-wrap items-center justify-center gap-4"></div>
+            <p id="cr-caption" class="mt-4 text-sm text-slate-600 text-center font-medium min-h-[2rem]"></p>
+          </div>
+        </div>
+      </section>
+      <!-- ═══════════ CHECKLIST ═══════════ -->
+      <section id="sec-checklist" class="mb-16 scroll-mt-24 section-animate">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-blue-700 text-sm font-bold">✓</span>
+          Exam checklist — Chapters 1–3 on one card
+        </h2>
+        <div class="space-y-6">
+          <div class="flex items-center gap-1.5 p-1 rounded-lg bg-slate-100 border border-slate-200 w-fit">
+            <button data-clfilter="all" class="cl-filter stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">All</button>
+            <button data-clfilter="1" class="cl-filter stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">Ch 1</button>
+            <button data-clfilter="2" class="cl-filter stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">Ch 2</button>
+            <button data-clfilter="3" class="cl-filter stepbtn px-3 py-1.5 rounded-md text-sm font-semibold">Ch 3</button>
+          </div>
+          <div class="my-4 p-6 bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto">
+            <table class="w-full text-sm" id="cl-table">
+              <thead><tr class="text-left text-slate-500 border-b border-slate-200"><th class="py-2 pr-3 font-semibold w-12">Ch</th><th class="py-2 pr-3 font-semibold">Be able to…</th><th class="py-2 font-semibold whitespace-nowrap">Where</th></tr></thead>
+              <tbody class="text-slate-700">
+                <tr data-part="1" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">1</td><td>Recognize linear vs nonlinear equations (products, exponents, functions of variables disqualify)</td><td class="ts">Ch1 p.3</td></tr>
+                <tr data-part="1" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">1</td><td>Write a parametric representation of a solution set (free variables → s, t)</td><td class="ts">Ch1 p.5–6</td></tr>
+                <tr data-part="1" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">1</td><td>State the trichotomy and match each case to its two-line picture (intersecting / coincident / parallel)</td><td class="ts">Ch1 p.8–10</td></tr>
+                <tr data-part="1" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">1</td><td>Name the three elementary row operations; explain why each preserves the solution set</td><td class="ts">Ch1 p.17</td></tr>
+                <tr data-part="1" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">1</td><td>Run Gaussian elimination + back-substitution on a 3×3 and a 4×4 system (Examples 3, 5)</td><td class="ts">Ch1 p.18–22</td></tr>
+                <tr data-part="1" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">1</td><td>Define REF and RREF; continue to RREF with Gauss-Jordan and read off the solution</td><td class="ts">Ch1 p.19–25</td></tr>
+                <tr data-part="1" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">1</td><td>State Theorem 1.1 (homogeneous: always consistent; fewer equations than variables ⇒ ∞ solutions)</td><td class="ts">Ch1 p.28</td></tr>
+                <tr data-part="1" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-amber-600">1</td><td>Set up curve-fitting, network-flow, and Kirchhoff circuit systems from data/diagrams</td><td class="ts">Ch1 p.31–41</td></tr>
+                <tr data-part="2" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-blue-600">2</td><td>Multiply matrices entry by entry (cᵢⱼ = row·column); check size compatibility first</td><td class="ts">Ch2 p.8–10</td></tr>
+                <tr data-part="2" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-blue-600">2</td><td>Rewrite a system as Ax = b and as a linear combination of columns</td><td class="ts">Ch2 p.10–16</td></tr>
+                <tr data-part="2" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-blue-600">2</td><td>Quote Theorems 2.1–2.4 (incl. zero-matrix Thm 2.2); know AB ≠ BA in general (⚠ no deck counterexample) and that cancellation needs invertible C (Thm 2.10)</td><td class="ts">Ch2 p.19–25, 39</td></tr>
+                <tr data-part="2" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-blue-600">2</td><td>Use transpose rules, especially (AB)ᵀ = BᵀAᵀ</td><td class="ts">Ch2 p.28</td></tr>
+                <tr data-part="2" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-blue-600">2</td><td>Find an inverse via [A|I] → [I|A⁻¹]; know the 2×2 shortcut, singularity detection, and Thm 2.8's inverse identities</td><td class="ts">Ch2 p.33–37</td></tr>
+                <tr data-part="2" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-blue-600">2</td><td>Recite Theorem 2.15's five equivalent conditions for invertibility</td><td class="ts">Ch2 p.50</td></tr>
+                <tr data-part="2" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-blue-600">2</td><td>Factor a matrix into elementary matrices; find an LU-factorization and solve via Ly = b, Ux = y</td><td class="ts">Ch2 p.49–55</td></tr>
+                <tr data-part="2" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-blue-600">2</td><td>Verify a stochastic matrix (columns sum to 1); compute Xₙ = PⁿX₀; test regularity; find a steady state</td><td class="ts">Ch2 p.57–66</td></tr>
+                <tr data-part="2" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-blue-600">2</td><td>Encode/decode with an invertible matrix; solve (I − D)X = E for a Leontief economy; apply A = (XᵀX)⁻¹XᵀY</td><td class="ts">Ch2 p.72–82</td></tr>
+                <tr data-part="3" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">3</td><td>Compute 2×2 determinants; find all minors and cofactors of a 3×3</td><td class="ts">Ch3 p.3–5</td></tr>
+                <tr data-part="3" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">3</td><td>Expand by cofactors along the best row/column (hunt zeros — Example 4's |A| = 39)</td><td class="ts">Ch3 p.7–8</td></tr>
+                <tr data-part="3" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">3</td><td>Use the triangular shortcut det = product of diagonal</td><td class="ts">Ch3 p.10</td></tr>
+                <tr data-part="3" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">3</td><td>Track det through row ops (swap −, add-multiple 0, scale ×c) and reduce to triangular (|A| = −14)</td><td class="ts">Ch3 p.13–14</td></tr>
+                <tr data-part="3" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">3</td><td>Spot zero determinants instantly (zero row/column, equal rows, multiple rows)</td><td class="ts">Ch3 p.17</td></tr>
+                <tr data-part="3" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">3</td><td>Apply det(AB) = det A · det B, det(cA) = cⁿ det A, det(A⁻¹) = 1/det A, det(Aᵀ) = det A</td><td class="ts">Ch3 p.21–24</td></tr>
+                <tr data-part="3" class="border-b border-slate-100"><td class="py-1.5 pr-3 font-bold text-emerald-600">3</td><td>State all six equivalent conditions for nonsingularity (incl. det ≠ 0)</td><td class="ts">Ch3 p.23</td></tr>
+                <tr data-part="3"><td class="py-1.5 pr-3 font-bold text-emerald-600">3</td><td>Build adj(A) and use A⁻¹ = adj(A)/det(A); solve one variable via Cramer (x = 4/5); use the area/line/volume/plane formulas</td><td class="ts">Ch3 p.28–38</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="text-sm text-slate-500">Page cites refer to the three handout PDFs in <code>subjects/AI211/</code> (2 slides per page). Companion artifacts: the eigenvalue flashcards and Chapter 7 digest kit in <code>_generated/</code>.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Diagram zoom overlay -->
+  <div class="diagram-overlay" id="diagram-overlay" onclick="closeDiagramZoom()">
+    <div class="diagram-overlay-inner" id="diagram-overlay-inner" onclick="event.stopPropagation()"></div>
+    <div class="diagram-overlay-hint">Click outside or press Esc to close &middot; Drag or scroll to pan</div>
+  </div>
+
+  <script>
+    // ═══ Theme-aware color helper ═══
+    function isDarkMode() { return document.documentElement.classList.contains('dark'); }
+    function getVizColors() {
+      const dark = isDarkMode();
+      return {
+        bg: dark ? '#0f172a' : '#ffffff',
+        surface: dark ? '#1e293b' : '#f8fafc',
+        border: dark ? '#334155' : '#e2e8f0',
+        text: dark ? '#e2e8f0' : '#1e293b',
+        textMuted: dark ? '#94a3b8' : '#64748b',
+        primary: dark ? '#60a5fa' : '#3b82f6',
+        primaryFaint: dark ? '#172554' : '#dbeafe',
+        success: dark ? '#34d399' : '#10b981',
+        successFaint: dark ? '#064e3b' : '#f0fdf4',
+        error: dark ? '#f87171' : '#ef4444',
+        errorFaint: dark ? '#450a0a' : '#fee2e2',
+        warning: dark ? '#fbbf24' : '#f59e0b',
+        warningFaint: dark ? '#451a03' : '#fef3c7',
+        accent: dark ? '#c4b5fd' : '#8b5cf6',
+        accentFaint: dark ? '#1a0f2e' : '#f5f3ff',
+        glow: dark ? 'rgba(96,165,250,0.3)' : 'rgba(59,130,246,0.15)',
+      };
+    }
+    const themeChangeCallbacks = [];
+    function onThemeChange(cb) { themeChangeCallbacks.push(cb); }
+
+    // ═══ Mermaid ═══
+    const mermaidSources = [];
+    document.querySelectorAll('.mermaid').forEach((el, i) => {
+      mermaidSources.push(el.innerHTML.trim());
+      el.setAttribute('data-idx', i);
+    });
+    function initMermaid(isDark) {
+      mermaid.initialize({
+        startOnLoad: false, theme: 'base',
+        themeVariables: isDark ? mermaidThemes.dark : mermaidThemes.light,
+        flowchart: { curve: 'basis', padding: 20 },
+      });
+    }
+    function swapNodeColors(source, isDark) {
+      if (!isDark) return source;
+      let s = source;
+      for (const { light, dark } of nodeColorSwaps) {
+        s = s.replaceAll(light[0], dark[0]).replaceAll(light[1], dark[1]).replaceAll(light[2], dark[2]);
+      }
+      return s;
+    }
+
+    // ═══ Zoom overlay (mermaid SVG + deck images) ═══
+    function openDiagramZoom(e) {
+      const svg = e.currentTarget;
+      const overlay = document.getElementById('diagram-overlay');
+      const inner = document.getElementById('diagram-overlay-inner');
+      const clone = svg.cloneNode(true);
+      clone.style.maxWidth = 'none';
+      clone.style.width = 'auto';
+      clone.style.height = 'auto';
+      clone.style.minWidth = Math.max(svg.viewBox.baseVal.width, 800) + 'px';
+      clone.style.cursor = 'default';
+      inner.innerHTML = '';
+      inner.appendChild(clone);
+      overlay.classList.add('open');
+      document.body.style.overflow = 'hidden';
+      setupDragToPan(inner);
+    }
+    function openImageZoom(img) {
+      const overlay = document.getElementById('diagram-overlay');
+      const inner = document.getElementById('diagram-overlay-inner');
+      const clone = img.cloneNode(true);
+      clone.style.maxWidth = 'none';
+      clone.style.width = 'min(1600px, 160vw)';
+      clone.style.cursor = 'default';
+      clone.onclick = null;
+      inner.innerHTML = '';
+      inner.appendChild(clone);
+      overlay.classList.add('open');
+      document.body.style.overflow = 'hidden';
+      setupDragToPan(inner);
+    }
+    function closeDiagramZoom() {
+      document.getElementById('diagram-overlay').classList.remove('open');
+      document.body.style.overflow = '';
+    }
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDiagramZoom(); });
+    function setupDragToPan(el) {
+      let isDragging = false, startX, startY, scrollLeft, scrollTop;
+      el.onmousedown = (e) => {
+        isDragging = true;
+        el.classList.add('dragging');
+        startX = e.pageX - el.offsetLeft;
+        startY = e.pageY - el.offsetTop;
+        scrollLeft = el.scrollLeft;
+        scrollTop = el.scrollTop;
+        e.preventDefault();
+      };
+      el.onmousemove = (e) => {
+        if (!isDragging) return;
+        const dx = e.pageX - el.offsetLeft - startX;
+        const dy = e.pageY - el.offsetTop - startY;
+        el.scrollLeft = scrollLeft - dx;
+        el.scrollTop = scrollTop - dy;
+      };
+      el.onmouseup = el.onmouseleave = () => {
+        isDragging = false;
+        el.classList.remove('dragging');
+      };
+      let tX, tY, tL, tT;
+      el.ontouchstart = (e) => {
+        const t = e.touches[0];
+        tX = t.pageX; tY = t.pageY; tL = el.scrollLeft; tT = el.scrollTop;
+      };
+      el.ontouchmove = (e) => {
+        const t = e.touches[0];
+        el.scrollLeft = tL - (t.pageX - tX);
+        el.scrollTop = tT - (t.pageY - tY);
+        e.preventDefault();
+      };
+    }
+
+    async function renderMermaid() {
+      if (mermaidSources.length === 0) return;
+      const dark = isDarkMode();
+      document.querySelectorAll('.mermaid').forEach(el => {
+        const idx = el.getAttribute('data-idx');
+        el.removeAttribute('data-processed');
+        el.innerHTML = swapNodeColors(mermaidSources[idx], dark);
+      });
+      await mermaid.run({ querySelector: '.mermaid' });
+      document.querySelectorAll('.mermaid svg').forEach(svg => {
+        svg.removeEventListener('click', openDiagramZoom);
+        svg.addEventListener('click', openDiagramZoom);
+      });
+    }
+
+    // ═══ Theme toggle ═══
+    function updateToggleIcons() {
+      const dark = isDarkMode();
+      document.getElementById('icon-sun').classList.toggle('hidden', !dark);
+      document.getElementById('icon-moon').classList.toggle('hidden', dark);
+    }
+    function toggleTheme() {
+      const willBeDark = !isDarkMode();
+      document.documentElement.classList.toggle('dark', willBeDark);
+      localStorage.setItem('ve-theme', willBeDark ? 'dark' : 'light');
+      updateToggleIcons();
+      initMermaid(willBeDark);
+      renderMermaid();
+      themeChangeCallbacks.forEach(cb => cb(willBeDark));
+      window.dispatchEvent(new CustomEvent('theme-change', { detail: { dark: willBeDark } }));
+    }
+    if (localStorage.getItem('ve-theme') === 'light') document.documentElement.classList.remove('dark');
+    updateToggleIcons();
+    initMermaid(isDarkMode());
+    renderMermaid();
+
+    // ═══ Scroll-spy + section fade ═══
+    const tocLinks = document.querySelectorAll('.toc-link');
+    const sections = document.querySelectorAll('section[id]');
+    const tocObs = new IntersectionObserver(entries => {
+      entries.forEach(e => { if (e.isIntersecting) {
+        tocLinks.forEach(l => l.classList.remove('active'));
+        const a = document.querySelector(`.toc-link[href="#${e.target.id}"]`);
+        if (a) a.classList.add('active');
+      }});
+    }, { rootMargin: '-20% 0px -75% 0px' });
+    sections.forEach(s => tocObs.observe(s));
+    const animObs = new IntersectionObserver(entries => {
+      entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+    }, { threshold: 0.08 });
+    document.querySelectorAll('.section-animate').forEach(el => animObs.observe(el));
+    document.querySelectorAll('.toc-link, #toc-mobile a').forEach(link => {
+      link.addEventListener('click', () => {
+        const targetId = link.getAttribute('href')?.replace('#', '');
+        if (!targetId) return;
+        const target = document.getElementById(targetId);
+        if (target && target.classList.contains('section-animate')) target.classList.add('visible');
+        document.querySelectorAll('.section-animate').forEach(el => {
+          if (el.getBoundingClientRect().top < window.innerHeight * 1.5) el.classList.add('visible');
+        });
+      });
+    });
+
+    Prism.highlightAll();
+  </script>
+
+  <script>
+  // ═══ VIZ: trichotomy ═══
+  (function() {
+    const graph = document.getElementById('tri-graph');
+    if (!graph) return;
+    const panel = document.getElementById('tri-panel');
+    const CASES = {
+      a: { l1: {a:1,b:1,c:3,label:'x + y = 3'}, l2: {a:1,b:-1,c:-1,label:'x − y = −1'}, pt: [1,2],
+           head: 'a · Two intersecting lines — exactly one solution', tone: 'emerald',
+           body: 'Add the equations: 2x = 2 ⇒ x = 1, so y = 2. The lines cross once, at (1, 2).', cite: 'Ch1 p.8' },
+      b: { l1: {a:1,b:1,c:3,label:'x + y = 3'}, l2: {a:2,b:2,c:6,label:'2x + 2y = 6'}, pt: null,
+           head: 'b · Two coincident lines — infinitely many solutions', tone: 'blue',
+           body: 'The second equation is the first times 2 — the “two” lines are one line. Parametrically: x = 3 − t, y = t.', cite: 'Ch1 p.9' },
+      c: { l1: {a:1,b:1,c:3,label:'x + y = 3'}, l2: {a:1,b:1,c:1,label:'x + y = 1'}, pt: null,
+           head: 'c · Two parallel lines — no solution', tone: 'red',
+           body: 'x + y cannot be 3 and 1 at once. Equal slopes, different intercepts: the lines never meet — the system is inconsistent.', cite: 'Ch1 p.10' },
+    };
+    let cur = 'a';
+    function toX(v) { return 40 + (v + 2) * 40; }   // x in [-2, 4.5]
+    function toY(v) { return 220 - (v + 1) * 40; }  // y in [-1, 4.5]
+    function lineSeg(l, c) {
+      // a x + b y = c over x range
+      const pts = [];
+      for (const x of [-2, 4.5]) {
+        if (l.b !== 0) pts.push([x, (l.c - l.a * x) / l.b]);
+      }
+      return pts.map(p => `${toX(p[0])},${toY(p[1])}`).join(' ');
+    }
+    function render() {
+      const c = getVizColors();
+      const cs = CASES[cur];
+      const tone = cs.tone === 'emerald' ? c.success : cs.tone === 'blue' ? c.primary : c.error;
+      let s = `<svg viewBox="0 0 300 260" class="w-full max-w-[300px] mx-auto" role="img">`;
+      s += `<line x1="${toX(-2)}" y1="${toY(0)}" x2="${toX(4.5)}" y2="${toY(0)}" stroke="${c.border}" stroke-width="1.5"/>`;
+      s += `<line x1="${toX(0)}" y1="${toY(-1)}" x2="${toX(0)}" y2="${toY(4.5)}" stroke="${c.border}" stroke-width="1.5"/>`;
+      for (const t of [1,2,3]) {
+        s += `<text x="${toX(t)}" y="${toY(0)+14}" text-anchor="middle" font-size="9" fill="${c.textMuted}">${t}</text>`;
+        s += `<text x="${toX(0)-10}" y="${toY(t)+3}" text-anchor="middle" font-size="9" fill="${c.textMuted}">${t}</text>`;
+      }
+      const off = (cur === 'b') ? 2.5 : 0; // visually offset the coincident twin so both are visible
+      s += `<polyline points="${lineSeg(cs.l1)}" fill="none" stroke="${c.primary}" stroke-width="2.5"/>`;
+      s += `<g ${cur==='b' ? `transform="translate(${off},${off})"` : ''}><polyline points="${lineSeg(cs.l2)}" fill="none" stroke="${cur==='a' ? c.warning : tone}" stroke-width="2.5" ${cur==='b' ? 'stroke-dasharray="7 5"' : ''}/></g>`;
+      if (cs.pt) s += `<circle cx="${toX(cs.pt[0])}" cy="${toY(cs.pt[1])}" r="6" fill="${c.success}" class="viz-glow"/><text x="${toX(cs.pt[0])+10}" y="${toY(cs.pt[1])-8}" font-size="11" font-weight="700" fill="${c.success}">(1, 2)</text>`;
+      s += `<text x="${toX(3.1)}" y="${toY(cs.l1.b ? (cs.l1.c - cs.l1.a*3.1)/cs.l1.b : 0)-6}" font-size="10" fill="${c.primary}">${cs.l1.label}</text>`;
+      s += `<text x="${toX(-1.8)}" y="${toY(cs.l2.b ? (cs.l2.c - cs.l2.a*(-1.8))/cs.l2.b : 0)-6}" font-size="10" fill="${cur==='a' ? c.warning : tone}">${cs.l2.label}</text>`;
+      s += `</svg>`;
+      graph.innerHTML = s;
+      panel.innerHTML = `
+        <p class="font-semibold text-slate-900">${cs.head}</p>
+        <p class="text-sm text-slate-600 leading-relaxed">${cs.body} <span class="ts">${cs.cite}</span></p>`;
+      document.querySelectorAll('.tri-btn').forEach(b => {
+        const on = b.getAttribute('data-tri') === cur;
+        b.style.cssText = on ? 'background:'+tone+';color:#fff' : 'color:'+c.textMuted;
+      });
+    }
+    document.querySelectorAll('.tri-btn').forEach(b => b.addEventListener('click', () => { cur = b.getAttribute('data-tri'); render(); }));
+    onThemeChange(render);
+    render();
+  })();
+
+  // ═══ shared-ish matrix renderer factory (per-IIFE copies keep isolation) ═══
+
+  // ═══ VIZ: Gaussian → Gauss-Jordan stepper ═══
+  (function() {
+    const matEl = document.getElementById('ga-matrix');
+    if (!matEl) return;
+    const sysEl = document.getElementById('ga-system');
+    const cap = document.getElementById('ga-caption');
+    const phaseEl = document.getElementById('ga-phase');
+    const S = [
+      { m: [[1,-2,3,9],[-1,3,0,-4],[2,-5,5,17]], hl: -1, op: '', sys: ['x − 2y + 3z = 9','−x + 3y = −4','2x − 5y + 5z = 17'],
+        cap: 'The augmented matrix carries the whole system — coefficients left of the bar, constants right. <span class="ts">Ch1 p.18</span>', ph: 'PHASE 1 · GAUSSIAN ELIMINATION', phc: 'amber' },
+      { m: [[1,-2,3,9],[0,1,3,5],[2,-5,5,17]], hl: 1, op: 'R₂ + R₁ → R₂', sys: ['x − 2y + 3z = 9','y + 3z = 5','2x − 5y + 5z = 17'],
+        cap: 'Add row 1 to row 2 — the −x is gone. Same solution set, simpler system. <span class="ts">Ch1 p.18</span>', ph: 'PHASE 1 · GAUSSIAN ELIMINATION', phc: 'amber' },
+      { m: [[1,-2,3,9],[0,1,3,5],[0,-1,-1,-1]], hl: 2, op: 'R₃ + (−2)R₁ → R₃', sys: ['x − 2y + 3z = 9','y + 3z = 5','−y − z = −1'],
+        cap: 'Clear the last x. Column 1 is done: one leading 1, zeros below.', ph: 'PHASE 1 · GAUSSIAN ELIMINATION', phc: 'amber' },
+      { m: [[1,-2,3,9],[0,1,3,5],[0,0,2,4]], hl: 2, op: 'R₃ + R₂ → R₃', sys: ['x − 2y + 3z = 9','y + 3z = 5','2z = 4'],
+        cap: 'Add row 2 to row 3 — now y is eliminated below its pivot too.', ph: 'PHASE 1 · GAUSSIAN ELIMINATION', phc: 'amber' },
+      { m: [[1,-2,3,9],[0,1,3,5],[0,0,1,2]], hl: 2, op: '(1/2)R₃ → R₃', sys: ['x − 2y + 3z = 9','y + 3z = 5','z = 2'],
+        cap: '<strong>Row-echelon form</strong>: the staircase of leading 1s. Gaussian elimination proper stops here. <span class="ts">Ch1 p.19</span>', ph: 'PHASE 1 · ROW-ECHELON FORM ✓', phc: 'amber' },
+      { m: [[1,-2,3,9],[0,1,3,5],[0,0,1,2]], hl: -1, op: 'back-substitution', sys: ['z = 2','y = 5 − 3(2) = −1','x = 9 + 2(−1) − 3(2) = 1'],
+        cap: 'Unwind from the bottom: z = 2 → y = −1 → x = 1. Solution (1, −1, 2). <span class="ts">Ch1 p.19</span>', ph: 'PHASE 2 · BACK-SUBSTITUTION ✓', phc: 'emerald' },
+      { m: [[1,0,9,19],[0,1,3,5],[0,0,1,2]], hl: 0, op: 'R₁ + (2)R₂ → R₁', sys: ['x + 9z = 19','y + 3z = 5','z = 2'],
+        cap: 'Or skip back-substitution: <strong>Gauss-Jordan</strong> keeps eliminating — now ABOVE the pivots. <span class="ts">Ch1 p.24</span>', ph: 'PHASE 3 · GAUSS-JORDAN (to RREF)', phc: 'blue' },
+      { m: [[1,0,9,19],[0,1,0,-1],[0,0,1,2]], hl: 1, op: 'R₂ + (−3)R₃ → R₂', sys: ['x + 9z = 19','y = −1','z = 2'],
+        cap: 'Clear the 3 above the third pivot.', ph: 'PHASE 3 · GAUSS-JORDAN (to RREF)', phc: 'blue' },
+      { m: [[1,0,0,1],[0,1,0,-1],[0,0,1,2]], hl: 0, op: 'R₁ + (−9)R₃ → R₁', sys: ['x = 1','y = −1','z = 2'],
+        cap: '<strong>Reduced row-echelon form</strong> — each variable alone. The solution is just sitting there. <span class="ts">Ch1 p.25</span>', ph: 'PHASE 3 · RREF ✓ — READ OFF', phc: 'blue' },
+    ];
+    let i = 0;
+    function fmt(v) { return Number.isInteger(v) ? v : v.toFixed(2); }
+    function render() {
+      const c = getVizColors();
+      const st = S[i];
+      let h = `<div class="inline-grid" style="grid-template-columns: repeat(4, auto); gap: 4px 10px; padding: 12px 18px; border-left: 2.5px solid ${c.text}; border-right: 2.5px solid ${c.text}; border-radius: 6px;">`;
+      st.m.forEach((row, r) => row.forEach((v, cx) => {
+        const isHl = r === st.hl;
+        const isConst = cx === 3;
+        h += `<span class="font-mono text-base text-center px-1 rounded" style="${isHl ? 'background:'+c.warningFaint+';color:'+c.text+';font-weight:700;' : 'color:'+c.text}${isConst ? ';border-left:1.5px dashed '+c.textMuted+';padding-left:10px' : ''}">${fmt(v)}</span>`;
+      }));
+      h += `</div>`;
+      if (st.op) h += `<p class="mt-2 text-center font-mono text-sm" style="color:${c.accent}">${st.op}</p>`;
+      matEl.innerHTML = h;
+      sysEl.innerHTML = st.sys.map(l => `<div>${l}</div>`).join('');
+      cap.innerHTML = st.cap;
+      const pc = st.phc === 'amber' ? c.warning : st.phc === 'emerald' ? c.success : c.primary;
+      phaseEl.textContent = st.ph;
+      phaseEl.style.color = pc;
+    }
+    document.getElementById('ga-step').addEventListener('click', () => { if (i < S.length-1) { i++; render(); } });
+    document.getElementById('ga-prev').addEventListener('click', () => { if (i > 0) { i--; render(); } });
+    document.getElementById('ga-reset').addEventListener('click', () => { i = 0; render(); });
+    onThemeChange(render);
+    render();
+  })();
+
+  // ═══ VIZ: matrix multiplication stepper ═══
+  (function() {
+    const stage = document.getElementById('mu-stage');
+    if (!stage) return;
+    const cap = document.getElementById('mu-caption');
+    const A = [[-1,3],[4,-2],[5,0]], B = [[-3,2],[-4,1]], C = [[-9,1],[-4,6],[-15,10]];
+    const calcs = [
+      null,
+      { r:0, cc:0, t:'c₁₁ = (−1)(−3) + (3)(−4) = 3 − 12 = <strong>−9</strong> — row 1 of A · column 1 of B <span class="ts">Ch2 p.9</span>' },
+      { r:0, cc:1, t:'c₁₂ = (−1)(2) + (3)(1) = −2 + 3 = <strong>1</strong>' },
+      { r:1, cc:0, t:'c₂₁ = (4)(−3) + (−2)(−4) = −12 + 8 = <strong>−4</strong>' },
+      { r:1, cc:1, t:'c₂₂ = (4)(2) + (−2)(1) = 8 − 2 = <strong>6</strong>' },
+      { r:2, cc:0, t:'c₃₁ = (5)(−3) + (0)(−4) = <strong>−15</strong>' },
+      { r:2, cc:1, t:'c₃₂ = (5)(2) + (0)(1) = <strong>10</strong> — and AB is complete <span class="ts">Ch2 p.10</span>' },
+    ];
+    let i = 0;
+    function grid(M, hlRow, hlCol, revealUpTo) {
+      const c = getVizColors();
+      let h = `<div class="inline-grid" style="grid-template-columns: repeat(${M[0].length}, auto); gap: 4px 12px; padding: 12px 16px; border-left: 2.5px solid ${c.text}; border-right: 2.5px solid ${c.text}; border-radius: 6px;">`;
+      M.forEach((row, r) => row.forEach((v, cx) => {
+        let style = 'color:'+c.text;
+        let txt = v;
+        if (revealUpTo !== undefined) {
+          const idx = r * M[0].length + cx;
+          if (idx > revealUpTo) { txt = '·'; style = 'color:'+c.textMuted; }
+          else if (idx === revealUpTo) style = 'background:'+c.successFaint+';color:'+c.success+';font-weight:700;';
+        }
+        if (hlRow === r) style = 'background:'+c.primaryFaint+';color:'+c.text+';font-weight:700;';
+        if (hlCol === cx) style = 'background:'+c.warningFaint+';color:'+c.text+';font-weight:700;';
+        h += `<span class="font-mono text-base text-center px-1.5 rounded" style="${style}">${txt}</span>`;
+      }));
+      return h + `</div>`;
+    }
+    function render() {
+      const st = calcs[i];
+      const rev = i === 0 ? -1 : (st.r * 2 + st.cc);
+      stage.innerHTML =
+        `<div>${grid(A, st ? st.r : null, null)}<p class="text-xs text-center mt-1 text-slate-500">A · 3×2</p></div>` +
+        `<span class="text-2xl text-slate-400">·</span>` +
+        `<div>${grid(B, null, st ? st.cc : null)}<p class="text-xs text-center mt-1 text-slate-500">B · 2×2</p></div>` +
+        `<span class="text-2xl text-slate-400">=</span>` +
+        `<div>${grid(C, null, null, rev)}<p class="text-xs text-center mt-1 text-slate-500">AB · 3×2</p></div>`;
+      cap.innerHTML = st ? st.t : 'Inner sizes match (3×<strong>2</strong>)(<strong>2</strong>×2) → defined; outer sizes give the answer\'s shape, 3×2 <span class="ts">Ch2 p.8</span>. Step to fill each entry.';
+    }
+    document.getElementById('mu-step').addEventListener('click', () => { if (i < calcs.length-1) { i++; render(); } });
+    document.getElementById('mu-prev').addEventListener('click', () => { if (i > 0) { i--; render(); } });
+    document.getElementById('mu-reset').addEventListener('click', () => { i = 0; render(); });
+    onThemeChange(render);
+    render();
+  })();
+  </script>
+
+  <script>
+  // ═══ VIZ: inverse [A|I] stepper ═══
+  (function() {
+    const stage = document.getElementById('inv-stage');
+    if (!stage) return;
+    const cap = document.getElementById('inv-caption');
+    const S = [
+      { m: [[1,-1,0,1,0,0],[1,0,-1,0,1,0],[-6,2,3,0,0,1]], hl: -1, op: '',
+        t: 'Adjoin I: the right half will record every move we make. <span class="ts">Ch2 p.34</span>' },
+      { m: [[1,-1,0,1,0,0],[0,1,-1,-1,1,0],[-6,2,3,0,0,1]], hl: 1, op: 'R₂ + (−1)R₁ → R₂', t: 'Clear below the first pivot…' },
+      { m: [[1,-1,0,1,0,0],[0,1,-1,-1,1,0],[0,-4,3,6,0,1]], hl: 2, op: 'R₃ + (6)R₁ → R₃', t: '…column 1 done. <span class="ts">Ch2 p.35</span>' },
+      { m: [[1,-1,0,1,0,0],[0,1,-1,-1,1,0],[0,0,-1,2,4,1]], hl: 2, op: 'R₃ + (4)R₂ → R₃', t: 'Column 2 cleared below.' },
+      { m: [[1,-1,0,1,0,0],[0,1,-1,-1,1,0],[0,0,1,-2,-4,-1]], hl: 2, op: '(−1)R₃ → R₃', t: 'Pivot 3 becomes a leading 1 — left half is upper triangular.' },
+      { m: [[1,-1,0,1,0,0],[0,1,0,-3,-3,-1],[0,0,1,-2,-4,-1]], hl: 1, op: 'R₂ + R₃ → R₂', t: 'Now eliminate UPWARD (Gauss-Jordan half).' },
+      { m: [[1,0,0,-2,-3,-1],[0,1,0,-3,-3,-1],[0,0,1,-2,-4,-1]], hl: 0, op: 'R₁ + R₂ → R₁',
+        t: 'Left half = I, so the right half IS A⁻¹ = [[−2,−3,−1],[−3,−3,−1],[−2,−4,−1]]. Check: AA⁻¹ = I = A⁻¹A. <span class="ts">Ch2 p.35</span>' },
+    ];
+    let i = 0;
+    function render() {
+      const c = getVizColors();
+      const st = S[i];
+      const done = i === S.length - 1;
+      let h = `<div><div class="inline-grid" style="grid-template-columns: repeat(6, auto); gap: 4px 10px; padding: 12px 16px; border-left: 2.5px solid ${c.text}; border-right: 2.5px solid ${c.text}; border-radius: 6px;">`;
+      st.m.forEach((row, r) => row.forEach((v, cx) => {
+        const right = cx >= 3;
+        let style = right ? 'color:'+(done ? c.success : c.textMuted) : 'color:'+c.text;
+        if (r === st.hl) style = 'background:'+c.warningFaint+';color:'+c.text+';font-weight:700;';
+        if (done && right) style += ';font-weight:700';
+        h += `<span class="font-mono text-base text-center px-1 rounded" style="${style}${cx===3 ? ';border-left:1.5px dashed '+c.textMuted+';padding-left:10px' : ''}">${v}</span>`;
+      }));
+      h += `</div>`;
+      if (st.op) h += `<p class="mt-2 text-center font-mono text-sm" style="color:${c.accent}">${st.op}</p>`;
+      h += `<p class="mt-1 text-center text-xs" style="color:${c.textMuted}">[ A | ${done ? 'A⁻¹' : 'I…'} ]</p></div>`;
+      stage.innerHTML = h;
+      cap.innerHTML = st.t;
+    }
+    document.getElementById('inv-step').addEventListener('click', () => { if (i < S.length-1) { i++; render(); } });
+    document.getElementById('inv-prev').addEventListener('click', () => { if (i > 0) { i--; render(); } });
+    document.getElementById('inv-reset').addEventListener('click', () => { i = 0; render(); });
+    onThemeChange(render);
+    render();
+  })();
+
+  // ═══ VIZ: cofactor explorer ═══
+  (function() {
+    const matEl = document.getElementById('cf-matrix');
+    if (!matEl) return;
+    const panel = document.getElementById('cf-panel');
+    const A = [[0,2,1],[3,-1,2],[4,0,1]];
+    let sel = [0,0];
+    function sub(i,j) {
+      const rows = [0,1,2].filter(r => r!==i), cols = [0,1,2].filter(cx => cx!==j);
+      return [[A[rows[0]][cols[0]], A[rows[0]][cols[1]]],[A[rows[1]][cols[0]], A[rows[1]][cols[1]]]];
+    }
+    function render() {
+      const c = getVizColors();
+      const [si, sj] = sel;
+      let h = `<div class="inline-grid" style="grid-template-columns: repeat(3, auto); gap: 6px; padding: 14px 18px; border-left: 2.5px solid ${c.text}; border-right: 2.5px solid ${c.text}; border-radius: 6px;">`;
+      A.forEach((row, r) => row.forEach((v, cx) => {
+        const struck = r === si || cx === sj;
+        const isSel = r === si && cx === sj;
+        let style = `cursor:pointer;color:${c.text};`;
+        if (struck) style += `opacity:.35;text-decoration:line-through;`;
+        if (isSel) style = `cursor:pointer;background:${c.primaryFaint};color:${c.primary};font-weight:800;opacity:1;text-decoration:none;border:2px dashed ${c.primary};`;
+        h += `<span data-rc="${r},${cx}" class="font-mono text-lg text-center px-2.5 py-1 rounded-lg transition-transform hover:scale-110" style="${style}">${v}</span>`;
+      }));
+      h += `</div>`;
+      matEl.innerHTML = h;
+      const M = sub(si, sj);
+      const mv = M[0][0]*M[1][1] - M[1][0]*M[0][1];
+      const sign = ((si+sj) % 2 === 0) ? 1 : -1;
+      const signGrid = [0,1,2].map(r => [0,1,2].map(cx => ((r+cx)%2===0?'+':'−')));
+      panel.innerHTML = `
+        <div class="p-4 rounded-lg" style="background:${c.surface};border:1px solid ${c.border}">
+          <p class="font-mono text-sm" style="color:${c.text}">M<sub>${si+1}${sj+1}</sub> = det [[${M[0]}],[${M[1]}]]<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= (${M[0][0]})(${M[1][1]}) − (${M[1][0]})(${M[0][1]}) = <strong>${mv}</strong></p>
+          <p class="font-mono text-sm mt-2" style="color:${c.text}">C<sub>${si+1}${sj+1}</sub> = (−1)<sup>${si+1}+${sj+1}</sup> M<sub>${si+1}${sj+1}</sub> = ${sign===1?'+':'−'}(${mv}) = <strong style="color:${sign*mv === mv && sign===1 ? c.success : c.error}">${sign*mv}</strong></p>
+          <div class="mt-3 flex items-center gap-3">
+            <span class="text-xs" style="color:${c.textMuted}">sign checkerboard:</span>
+            <div class="inline-grid" style="grid-template-columns: repeat(3, auto); gap:2px">${signGrid.map((row,r)=>row.map((s,cx)=>`<span class="font-mono text-xs px-1.5 py-0.5 rounded text-center" style="${r===si&&cx===sj ? 'background:'+c.primary+';color:#fff;font-weight:700' : 'color:'+c.textMuted}">${s}</span>`).join('')).join('')}</div>
+          </div>
+        </div>
+        <p class="mt-2 text-xs" style="color:${c.textMuted}">All nine: C₁₁=−1, C₁₂=5, C₁₃=4 · C₂₁=−2, C₂₂=−4, C₂₃=8 · C₃₁=5, C₃₂=3, C₃₃=−6 <span class="ts">Ch3 p.5</span></p>`;
+      matEl.querySelectorAll('[data-rc]').forEach(el => el.addEventListener('click', () => {
+        sel = el.getAttribute('data-rc').split(',').map(Number); render();
+      }));
+    }
+    onThemeChange(render);
+    render();
+  })();
+
+  // ═══ VIZ: determinant row-ops stepper ═══
+  (function() {
+    const stage = document.getElementById('dt-stage');
+    if (!stage) return;
+    const cap = document.getElementById('dt-caption');
+    const S = [
+      { pre: '|A| =', mult: '', m: [[0,-7,14],[1,2,-2],[0,3,-8]], hl: -1,
+        t: 'That 0 in the corner is no pivot — and we want triangular form. Time for the three moves, with receipts. <span class="ts">Ch3 p.13</span>' },
+      { pre: '=', mult: '−1 ×', m: [[1,2,-2],[0,-7,14],[0,3,-8]], hl: 0,
+        t: 'R₁ ↔ R₂ — a swap. Price: the determinant flips sign (Theorem 3.3.1).' },
+      { pre: '=', mult: '−1 × (−7) ×', m: [[1,2,-2],[0,1,-2],[0,3,-8]], hl: 1,
+        t: 'Factor −7 out of row 2 (Theorem 3.3.3). Running multiplier: −(−7) = +7. <span class="ts">Ch3 p.14</span>' },
+      { pre: '=', mult: '7 ×', m: [[1,2,-2],[0,1,-2],[0,0,-2]], hl: 2,
+        t: 'R₃ + (−3)R₂ — the workhorse move is FREE (Theorem 3.3.2). And we\'re triangular.' },
+      { pre: '=', mult: '7 × (1)(1)(−2) =', m: [[1,2,-2],[0,1,-2],[0,0,-2]], hl: -2,
+        t: 'Triangular ⇒ multiply the diagonal (Theorem 3.2): <strong>|A| = −14</strong>. <span class="ts">Ch3 p.14</span>' },
+    ];
+    let i = 0;
+    function render() {
+      const c = getVizColors();
+      const st = S[i];
+      let h = `<span class="font-mono text-lg" style="color:${c.text}">${st.pre}</span>`;
+      if (st.mult) h += `<span class="font-mono text-lg font-bold" style="color:${c.accent}">${st.mult}</span>`;
+      h += `<div class="inline-grid" style="grid-template-columns: repeat(3, auto); gap: 4px 12px; padding: 12px 16px; border-left: 2.5px solid ${c.text}; border-right: 2.5px solid ${c.text}; border-radius: 6px;">`;
+      st.m.forEach((row, r) => row.forEach((v, cx) => {
+        let style = 'color:'+c.text;
+        if (r === st.hl) style = 'background:'+c.warningFaint+';color:'+c.text+';font-weight:700;';
+        if (st.hl === -2 && r === cx) style = 'background:'+c.successFaint+';color:'+c.success+';font-weight:800;';
+        h += `<span class="font-mono text-base text-center px-1 rounded" style="${style}">${v}</span>`;
+      }));
+      h += `</div>`;
+      if (i === S.length-1) h += `<span class="font-mono text-xl font-extrabold" style="color:${c.error}">−14</span>`;
+      stage.innerHTML = h;
+      cap.innerHTML = st.t;
+    }
+    document.getElementById('dt-step').addEventListener('click', () => { if (i < S.length-1) { i++; render(); } });
+    document.getElementById('dt-prev').addEventListener('click', () => { if (i > 0) { i--; render(); } });
+    document.getElementById('dt-reset').addEventListener('click', () => { i = 0; render(); });
+    onThemeChange(render);
+    render();
+  })();
+
+  // ═══ VIZ: Cramer stepper ═══
+  (function() {
+    const stage = document.getElementById('cr-stage');
+    if (!stage) return;
+    const cap = document.getElementById('cr-caption');
+    const A = [[-1,2,-3],[2,0,1],[3,-4,4]];
+    const A1 = [[1,2,-3],[0,0,1],[2,-4,4]];
+    const S = [
+      { show: 'A', t: 'The coefficient matrix. |A| = 10 ≠ 0, so the solution is unique and Cramer applies. <span class="ts">Ch3 p.32</span>' },
+      { show: 'A1', t: 'Build A₁: replace COLUMN 1 with the constants (1, 0, 2). Then x = det(A₁)/det(A). <span class="ts">Ch3 p.33</span>' },
+      { show: 'A1x', t: 'det(A₁): expand along row 2 — only the 1 at (2,3) is nonzero: (1)(−1)⁵ det[[1,2],[2,−4]] = (−1)(−8) = 8.' },
+      { show: 'done', t: '<strong>x = 8/10 = 4/5</strong>. Same recipe with A₂, A₃ gives y and z — each variable a ratio of determinants.' },
+    ];
+    let i = 0;
+    function grid(M, hlCol, hlRow) {
+      const c = getVizColors();
+      let h = `<div class="inline-grid" style="grid-template-columns: repeat(3, auto); gap: 4px 12px; padding: 12px 16px; border-left: 2.5px solid ${c.text}; border-right: 2.5px solid ${c.text}; border-radius: 6px;">`;
+      M.forEach((row, r) => row.forEach((v, cx) => {
+        let style = 'color:'+c.text;
+        if (hlCol === cx) style = 'background:'+c.errorFaint+';color:'+c.error+';font-weight:700;';
+        if (hlRow === r) style = 'background:'+c.primaryFaint+';color:'+c.primary+';font-weight:700;';
+        h += `<span class="font-mono text-base text-center px-1 rounded" style="${style}">${v}</span>`;
+      }));
+      return h + `</div>`;
+    }
+    function render() {
+      const c = getVizColors();
+      const st = S[i];
+      let h = '';
+      if (st.show === 'A') h = `<div>${grid(A)}<p class="text-xs text-center mt-1" style="color:${c.textMuted}">A · |A| = 10</p></div>`;
+      else if (st.show === 'A1') h = `<div>${grid(A1, 0)}<p class="text-xs text-center mt-1" style="color:${c.textMuted}">A₁ — constants column in pink</p></div>`;
+      else if (st.show === 'A1x') h = `<div>${grid(A1, null, 1)}<p class="text-xs text-center mt-1" style="color:${c.textMuted}">expand along row 2</p></div><span class="font-mono text-lg" style="color:${c.text}">= 8</span>`;
+      else h = `<div>${grid(A1)}</div><div class="font-mono text-xl font-bold" style="color:${c.success}">x = det(A₁)/det(A) = 8/10 = 4/5</div>`;
+      stage.innerHTML = h;
+      cap.innerHTML = st.t;
+    }
+    document.getElementById('cr-step').addEventListener('click', () => { if (i < S.length-1) { i++; render(); } });
+    document.getElementById('cr-prev').addEventListener('click', () => { if (i > 0) { i--; render(); } });
+    document.getElementById('cr-reset').addEventListener('click', () => { i = 0; render(); });
+    onThemeChange(render);
+    render();
+  })();
+
+  // ═══ Checklist filter ═══
+  (function() {
+    const table = document.getElementById('cl-table');
+    if (!table) return;
+    const btns = document.querySelectorAll('.cl-filter');
+    let active = 'all';
+    function render() {
+      const c = getVizColors();
+      table.querySelectorAll('tbody tr').forEach(tr => {
+        tr.style.display = (active === 'all' || tr.getAttribute('data-part') === active) ? '' : 'none';
+      });
+      btns.forEach(b => {
+        const on = b.getAttribute('data-clfilter') === active;
+        b.style.cssText = on ? 'background:'+c.primary+';color:#fff' : 'color:'+c.textMuted;
+      });
+    }
+    btns.forEach(b => b.addEventListener('click', () => { active = b.getAttribute('data-clfilter'); render(); }));
+    onThemeChange(render);
+    render();
+  })();
+  </script>
+
+</body>
+</html>
